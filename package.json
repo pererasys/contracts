@@ -1,0 +1,28 @@
+{
+  "name": "ecstasy",
+  "version": "1.0.0",
+  "description": "Ecstasy smart contract",
+  "main": "",
+  "repository": "https://github.com/pererasys/ecstasy.git",
+  "author": "Andrew Perera <pererasys@gmail.com>",
+  "license": "GPL-3.0",
+  "scripts": {
+    "develop": "truffle develop",
+    "test": "truffle test",
+    "compile": "truffle compile",
+    "deploy": "truffle migrate --network bsc",
+    "deploy:dev": "truffle migrate --network development",
+    "deploy:test": "truffle migrate --network testnet",
+    "format": "prettier --write 'contracts/**/*.sol'",
+    "lint": "prettier --list-different 'contracts/**/*.sol'"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.1.0",
+    "@truffle/hdwallet-provider": "^1.4.0",
+    "truffle": "^5.3.7"
+  },
+  "devDependencies": {
+    "prettier": "^2.3.0",
+    "prettier-plugin-solidity": "^1.0.0-beta.10"
+  }
+}
