@@ -8,7 +8,8 @@ While these winners are selected randomly, holders with larger stakes have a hig
 
 Created by Andrew Perera
 
-Fork of the RFI (https://github.com/reflectfinance/reflect-contracts)\
+Fork of the RFI (https://github.com/reflectfinance/reflect-contracts)
+\
 Concepts referenced from SAFEMOON (https://github.com/safemoonprotocol/Safemoon.sol)
 
 _All modifications are reflected in the comments of the Ecstasy contract._
