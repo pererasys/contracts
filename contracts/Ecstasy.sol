@@ -46,7 +46,7 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _tFeeTotal;
 
   uint256 private _potTotal;
-  uint256 private _previousPot;
+  uint256 private _previousPotTotal;
   address private _previousWinner;
   mapping(address => uint256) private _lOwned;
   mapping(address => uint256) private _playerStakes;
@@ -95,8 +95,8 @@ contract Ecstasy is Context, IERC20, Ownable {
     return _potTotal;
   }
 
-  function previousPot() public view returns (uint256) {
-    return _previousPot;
+  function previousPotTotal() public view returns (uint256) {
+    return _previousPotTotal;
   }
 
   function previousWinner() public view returns (address) {
