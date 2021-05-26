@@ -8,4 +8,4 @@ Rather than redistributing fees at the time of transfer, fees are collected thro
 
 Created by Andrew Perera
 
-Fork of the Safemoon Protocol (safemoonprotocol/Safemoon.sol)
+Fork of the RFI (https://github.com/reflectfinance/reflect-contracts)
