@@ -6,7 +6,15 @@
  * - Fork of https://github.com/reflectfinance/reflect-contracts/blob/main/contracts/REFLECT.sol
  * - openzeppelin-solidity -> @openzeppelin/contracts
  * - Rename contract to Ecstasy
- * - Add interfaces from https://github.com/safemoonprotocol/Safemoon.sol/blob/main/Safemoon.sol
+ *
+ * 05/26/2021
+ * - Reference some concepts from SAFEMOON (https://github.com/safemoonprotocol/Safemoon.sol)
+ *   - Exclude some accounts from fees
+ *   - Add system to exclude addresses from fees
+ *   - Ability to update fee structure
+ * - Update transaction fee (2%)
+ * - Add lottery fee (3%)
+ *
  */
 
 pragma solidity ^0.8.4;
@@ -27,6 +35,8 @@ contract Ecstasy is Context, IERC20, Ownable {
   mapping(address => uint256) private _tOwned;
   mapping(address => mapping(address => uint256)) private _allowances;
 
+  mapping(address => bool) private _isExcludedFromFee;
+
   mapping(address => bool) private _isExcluded;
   address[] private _excluded;
 
@@ -35,12 +45,27 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _rTotal = (MAX - (MAX % _tTotal));
   uint256 private _tFeeTotal;
 
+  uint256 private _potTotal;
+  uint256 private _previousPot;
+  address private _previousWinner;
+  mapping(address => uint256) private _lOwned;
+  mapping(address => uint256) private _playerStakes;
+
+  uint256 public _transactionFee = 2;
+  uint256 private _previousTransactionFee = _transactionFee;
+
+  uint256 public _lotteryFee = 3;
+  uint256 private _previousLotteryFee = _lotteryFee;
+
   string private _name = "Ecstasy";
   string private _symbol = "E";
   uint8 private _decimals = 9;
 
   constructor() {
     _rOwned[_msgSender()] = _rTotal;
+
+    _isExcludedFromFee[owner()] = true;
+    _isExcludedFromFee[address(this)] = true;
 
     emit Transfer(address(0), _msgSender(), _tTotal);
   }
@@ -64,6 +89,18 @@ contract Ecstasy is Context, IERC20, Ownable {
   function balanceOf(address account) public view override returns (uint256) {
     if (_isExcluded[account]) return _tOwned[account];
     return tokenFromReflection(_rOwned[account]);
+  }
+
+  function potTotal() public view returns (uint256) {
+    return _potTotal;
+  }
+
+  function previousPot() public view returns (uint256) {
+    return _previousPot;
+  }
+
+  function previousWinner() public view returns (address) {
+    return _previousWinner;
   }
 
   function transfer(address recipient, uint256 amount)
@@ -222,6 +259,27 @@ contract Ecstasy is Context, IERC20, Ownable {
     require(sender != address(0), "ERC20: transfer from the zero address");
     require(recipient != address(0), "ERC20: transfer to the zero address");
     require(amount > 0, "Transfer amount must be greater than zero");
+
+    //indicates if fee should be deducted from transfer
+    bool takeFee = true;
+
+    //if any account belongs to _isExcludedFromFee account then remove the fee
+    if (_isExcludedFromFee[sender] || _isExcludedFromFee[recipient]) {
+      takeFee = false;
+    }
+
+    //transfer amount, it will take tax, burn, liquidity fee
+    _tokenTransfer(sender, recipient, amount, takeFee);
+  }
+
+  function _tokenTransfer(
+    address sender,
+    address recipient,
+    uint256 amount,
+    bool takeFee
+  ) private {
+    if (!takeFee) removeAllFee();
+
     if (_isExcluded[sender] && !_isExcluded[recipient]) {
       _transferFromExcluded(sender, recipient, amount);
     } else if (!_isExcluded[sender] && _isExcluded[recipient]) {
@@ -233,6 +291,8 @@ contract Ecstasy is Context, IERC20, Ownable {
     } else {
       _transferStandard(sender, recipient, amount);
     }
+
+    if (!takeFee) restoreAllFee();
   }
 
   function _transferStandard(
@@ -336,12 +396,13 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   function _getTValues(uint256 tAmount)
     private
-    pure
+    view
     returns (uint256, uint256)
   {
-    uint256 tFee = tAmount.div(100);
-    uint256 tTransferAmount = tAmount.sub(tFee);
-    return (tTransferAmount, tFee);
+    uint256 tTransactionFee = calculateTransactionFee(tAmount);
+    // uint256 tLotteryFee = tAmount.mul(_lotteryFee).div(10**2);
+    uint256 tTransferAmount = tAmount.sub(tTransactionFee); //.sub(tLotteryFee)
+    return (tTransferAmount, tTransactionFee);
   }
 
   function _getRValues(
@@ -379,5 +440,54 @@ contract Ecstasy is Context, IERC20, Ownable {
     }
     if (rSupply < _rTotal.div(_tTotal)) return (_rTotal, _tTotal);
     return (rSupply, tSupply);
+  }
+
+  function calculateTransactionFee(uint256 _amount)
+    private
+    view
+    returns (uint256)
+  {
+    return _amount.mul(_transactionFee).div(10**2);
+  }
+
+  function calculateLotteryFee(uint256 _amount) private view returns (uint256) {
+    return _amount.mul(_lotteryFee).div(10**2);
+  }
+
+  function removeAllFee() private {
+    if (_transactionFee == 0 && _lotteryFee == 0) return;
+
+    _previousTransactionFee = _transactionFee;
+    _previousLotteryFee = _lotteryFee;
+
+    _transactionFee = 0;
+    _lotteryFee = 0;
+  }
+
+  function restoreAllFee() private {
+    _transactionFee = _previousTransactionFee;
+    _lotteryFee = _previousLotteryFee;
+  }
+
+  function setTransactionFee(uint256 fee) public onlyOwner {
+    _previousTransactionFee = _transactionFee;
+    _transactionFee = fee;
+  }
+
+  function setLotteryFee(uint256 fee) public onlyOwner {
+    _previousLotteryFee = _lotteryFee;
+    _lotteryFee = fee;
+  }
+
+  function excludeFromFee(address account) public onlyOwner {
+    _isExcludedFromFee[account] = true;
+  }
+
+  function includeInFee(address account) public onlyOwner {
+    _isExcludedFromFee[account] = false;
+  }
+
+  function isExcludedFromFee(address account) public view returns (bool) {
+    return _isExcludedFromFee[account];
   }
 }

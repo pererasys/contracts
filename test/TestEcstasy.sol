@@ -39,4 +39,13 @@ contract TestEcstasy {
       "Owner should have all Ecstasy initially"
     );
   }
+
+  function testOwnerExclusionFromFees() public {
+    Ecstasy instance = Ecstasy(DeployedAddresses.Ecstasy());
+
+    Assert.isTrue(
+      instance.isExcludedFromFee(tx.origin),
+      "Owner should be excluded from all fees"
+    );
+  }
 }

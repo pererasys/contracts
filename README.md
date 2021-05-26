@@ -1,11 +1,14 @@
 # Ecstasy
 
-Based on the fee structure of Safemoon Protocol, Ecstasy is designed to deliver larger payouts to selected wallets each week.
+Based on RFI, Ecstasy takes a transaction fee from each transfer. 2% will be immediately distributed to other holders of the token and 3% will be added to a "pot" that will be transferred to one lucky winner at the end of each week (Friday at 11:59pm EST).
 
-Rather than redistributing fees at the time of transfer, fees are collected throughout the week to create a prize pool to be distributed to random wallets at the end of the week. Wallets with larger balances have a greater probability of winning, but everybody has a chance.
+While these winners are selected randomly, holders with larger stakes have a higher probability of winning. After winning a pot, the address will be excluded from the following week's lottery to give other accounts a chance to win.
 
 ## Contribution
 
 Created by Andrew Perera
 
 Fork of the RFI (https://github.com/reflectfinance/reflect-contracts)
+Concepts referenced from SAFEMOON (https://github.com/safemoonprotocol/Safemoon.sol)
+
+_All modifications are reflected in the comments of the Ecstasy contract._
