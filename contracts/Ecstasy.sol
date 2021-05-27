@@ -46,9 +46,6 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _rTotal = (MAX - (MAX % _tTotal));
   uint256 private _tFeeTotal;
 
-  uint256 private _previousPotTotal;
-  address private _previousWinner;
-
   uint256 public _transactionFee = 2;
   uint256 private _previousTransactionFee = _transactionFee;
 
@@ -93,14 +90,6 @@ contract Ecstasy is Context, IERC20, Ownable {
   function potTotal() public view returns (uint256) {
     if (_isExcluded[address(this)]) return _tOwned[address(this)];
     return tokenFromReflection(_rOwned[address(this)]);
-  }
-
-  function previousPotTotal() public view returns (uint256) {
-    return _previousPotTotal;
-  }
-
-  function previousWinner() public view returns (address) {
-    return _previousWinner;
   }
 
   function transfer(address recipient, uint256 amount)
@@ -411,10 +400,6 @@ contract Ecstasy is Context, IERC20, Ownable {
     }
 
     _rOwned[account] = _rOwned[account].add(reward);
-
-    _previousPotTotal = reward;
-    _previousWinner = account;
-
     emit Transfer(address(this), account, reward);
   }
 
