@@ -442,7 +442,7 @@ contract Ecstasy is Context, IERC20, Ownable {
   }
 
   function _resetLottery() private {
-    _nextLottery = block.timestamp + 7 days;
+    _nextLottery = block.timestamp + _lotteryInterval;
     if (_isExcluded[address(this)]) _tOwned[address(this)] = 0;
     else _rOwned[address(this)] = 0;
   }
