@@ -30,11 +30,32 @@ contract("Ecstasy", (accounts) => {
     assert.equal(balance, DEFAULT_SUPPLY, "Balance mismatch");
   });
 
+  it("owner should be excluded from fees by default", async () => {
+    const instance = await Ecstasy.new();
+    const feeStatus = await instance.isExcludedFromFee(accounts[0]);
+
+    assert.equal(feeStatus, true, "Owner fee status mismatch");
+  });
+
+  it("pot should be excluded from fees by default", async () => {
+    const instance = await Ecstasy.new();
+    const feeStatus = await instance.isExcludedFromFee(instance.address);
+
+    assert.equal(feeStatus, true, "Pot fee status mismatch");
+  });
+
   it("pot should be empty", async () => {
     const instance = await Ecstasy.new();
     const pot = await instance.currentPot();
 
     assert.equal(pot, 0, "Pot mismatch");
+  });
+
+  it("pot should be excluded from rewards by default", async () => {
+    const instance = await Ecstasy.new();
+    const status = await instance.isExcluded(instance.address);
+
+    assert.equal(status, true, "Pot exclusion status mismatch");
   });
 
   it("should exclude account from rewards", async () => {
