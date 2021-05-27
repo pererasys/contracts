@@ -37,22 +37,89 @@ contract("Ecstasy", (accounts) => {
     assert.equal(pot, 0, "Pot mismatch");
   });
 
-  it("should transfer without fees", async () => {
-    const from = accounts[0];
-    const to = accounts[1];
+  it("should exclude account from rewards", async () => {
+    const instance = await Ecstasy.new();
+
+    const account = accounts[1];
+
+    const initialStatus = await instance.isExcluded(account);
+
+    assert.equal(initialStatus, false, "Account initial status mismatch");
+
+    await instance.excludeAccount(account);
+
+    const finalStatus = await instance.isExcluded(account);
+
+    assert.equal(finalStatus, true, "Account final status mismatch");
+  });
+
+  it("should include account in rewards", async () => {
+    const instance = await Ecstasy.new();
+
+    const account = accounts[1];
+
+    await instance.excludeAccount(account);
+    const initialStatus = await instance.isExcluded(account);
+
+    assert.equal(initialStatus, true, "Account initial status mismatch");
+
+    await instance.includeAccount(account);
+    const finalStatus = await instance.isExcluded(account);
+
+    assert.equal(finalStatus, false, "Account final status mismatch");
+  });
+
+  it("should exclude account from fees", async () => {
+    const instance = await Ecstasy.new();
+
+    const account = accounts[1];
+
+    await instance.includeInFee(account);
+    const initialStatus = await instance.isExcludedFromFee(account);
+
+    assert.equal(initialStatus, false, "Account initial status mismatch");
+
+    await instance.excludeFromFee(account);
+    const finalStatus = await instance.isExcludedFromFee(account);
+
+    assert.equal(finalStatus, true, "Account final status mismatch");
+  });
+
+  it("should include account in fees", async () => {
+    const account = accounts[1];
 
     const instance = await Ecstasy.new();
 
+    await instance.excludeFromFee(account);
+    const initialStatus = await instance.isExcludedFromFee(account);
+
+    assert.equal(initialStatus, true, "Account initial status mismatch");
+
+    await instance.includeInFee(account);
+    const finalStatus = await instance.isExcludedFromFee(account);
+
+    assert.equal(finalStatus, false, "Account final status mismatch");
+  });
+
+  it("should transfer without fees", async () => {
+    const instance = await Ecstasy.new();
+
+    const from = accounts[0];
+    const to = accounts[1];
+
     const initialBalanceFrom = await instance.balanceOf(from);
 
-    const transferAmount = 100;
+    // ensure at least one party is excluded in fees
+    await instance.excludeFromFee(from);
 
+    const transferAmount = 100;
     await instance.transfer(to, transferAmount, { from });
 
     const balanceFrom = await instance.balanceOf(from);
     const balanceTo = await instance.balanceOf(to);
 
     const fees = await instance.totalFees();
+    const pot = await instance.currentPot();
 
     assert.equal(
       balanceFrom,
@@ -61,20 +128,22 @@ contract("Ecstasy", (accounts) => {
     );
     assert.equal(balanceTo, transferAmount, "TO balance mismatch");
     assert.equal(fees, 0, "Fee mismatch");
+    assert.equal(pot, 0, "Pot mismatch");
   });
 
   it("should transfer with fees", async () => {
+    const instance = await Ecstasy.new();
+
     const from = accounts[0];
     const to = accounts[1];
 
-    const instance = await Ecstasy.new();
-
     const initialBalanceFrom = await instance.balanceOf(from);
 
-    const transferAmount = 100;
-
+    // ensure both parties are included in fees
     await instance.includeInFee(from);
     await instance.includeInFee(to);
+
+    const transferAmount = 100;
     await instance.transfer(to, transferAmount, { from });
 
     const balanceFrom = await instance.balanceOf(from);
@@ -99,5 +168,92 @@ contract("Ecstasy", (accounts) => {
     );
     assert.equal(transferFees, expectedFees, "Fee mismatch");
     assert.equal(currentPot, expectedPot, "Pot mismatch");
+  });
+
+  it("should transfer with updated fee structure", async () => {
+    const instance = await Ecstasy.new();
+
+    const from = accounts[0];
+    const to = accounts[1];
+
+    const initialBalanceFrom = await instance.balanceOf(from);
+
+    const transferAmount = 100;
+    const newTransactionFee = DEFAULT_TRANSFER_FEE + 3;
+    const newLotteryFee = DEFAULT_LOTTERY_FEE + 2;
+
+    await instance.setTransactionFee(newTransactionFee);
+    await instance.setLotteryFee(newLotteryFee);
+
+    // ensure both parties are included in fees
+    await instance.includeInFee(from);
+    await instance.includeInFee(to);
+
+    await instance.transfer(to, transferAmount, { from });
+
+    const balanceFrom = await instance.balanceOf(from);
+    const balanceTo = await instance.balanceOf(to);
+
+    const transferFees = await instance.totalFees();
+    const currentPot = await instance.currentPot();
+
+    const expectedFees = (transferAmount * newTransactionFee) / 10 ** 2;
+    const expectedPot = (transferAmount * newLotteryFee) / 10 ** 2;
+    const expectedTotalFees = expectedFees + expectedPot;
+
+    assert.equal(
+      balanceFrom,
+      initialBalanceFrom - transferAmount,
+      "FROM balance mismatch"
+    );
+    assert.equal(
+      balanceTo,
+      transferAmount - expectedTotalFees,
+      "TO balance mismatch"
+    );
+    assert.equal(transferFees, expectedFees, "Fee mismatch");
+    assert.equal(currentPot, expectedPot, "Pot mismatch");
+  });
+
+  it("should distribute pot appropriately", async () => {
+    const instance = await Ecstasy.new();
+
+    const owner = await instance.owner();
+    const recipient = accounts[1];
+
+    const from = accounts[0];
+    const to = accounts[1];
+
+    // ensure both parties are included in fees
+    await instance.includeInFee(from);
+    await instance.includeInFee(to);
+
+    const transferAmount = 100000;
+    await instance.transfer(to, transferAmount, { from });
+
+    const initialOwnerBalance = await instance.balanceOf(owner);
+    const initialRecipientBalance = await instance.balanceOf(recipient);
+
+    const currentPot = await instance.currentPot();
+
+    await instance.distributePot(recipient);
+
+    const ownerBalance = await instance.balanceOf(owner);
+    const recipientBalance = await instance.balanceOf(recipient);
+
+    const expectedOwnerTax = (currentPot * DEFAULT_LOTTERY_TAX) / 10 ** 2;
+    const expectedReward = currentPot - expectedOwnerTax;
+
+    const expectedRecipientBalance =
+      parseInt(initialRecipientBalance) + parseInt(expectedReward);
+    const expectedOwnerBalance =
+      parseInt(initialOwnerBalance) + parseInt(expectedOwnerTax);
+
+    assert.equal(
+      recipientBalance,
+      expectedRecipientBalance,
+      "RECIPIENT balance mismatch"
+    );
+    assert.equal(ownerBalance, expectedOwnerBalance, "OWNER balance mismatch");
   });
 });
