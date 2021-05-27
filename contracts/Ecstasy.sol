@@ -16,6 +16,7 @@
  * - Add transaction fee
  * - Add lottery fee
  * - Add lottery distribution
+ * - Implement lottery tax to offset gas costs
  */
 
 pragma solidity ^0.8.4;
@@ -46,11 +47,14 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _rTotal = (MAX - (MAX % _tTotal));
   uint256 private _tFeeTotal;
 
-  uint256 public _transactionFee = 2;
+  uint256 private _transactionFee = 2;
   uint256 private _previousTransactionFee = _transactionFee;
 
-  uint256 public _lotteryFee = 3;
+  uint256 private _lotteryFee = 3;
   uint256 private _previousLotteryFee = _lotteryFee;
+
+  uint256 private _lotteryTax = 2;
+  uint256 private _previousLotteryTax = _lotteryTax;
 
   string private _name = "Ecstasy";
   string private _symbol = "E";
@@ -62,6 +66,10 @@ contract Ecstasy is Context, IERC20, Ownable {
     // exclude both the owner and the contract from all fees
     _isExcludedFromFee[owner()] = true;
     _isExcludedFromFee[address(this)] = true;
+
+    // exclude the contract from fee distribution
+    _isExcluded[address(this)] = true;
+    _excluded.push(address(this));
 
     emit Transfer(address(0), _msgSender(), _tTotal);
   }
@@ -228,10 +236,9 @@ contract Ecstasy is Context, IERC20, Ownable {
     }
   }
 
-  function distributePot(address account) public onlyOwner() returns (bool) {
-    require(!_isExcluded[account], "Winner must not be excluded");
+  function distributePot(address account) public onlyOwner() {
+    require(!_isExcluded[account], "Winner must not be excluded from rewards");
     _distributePot(account);
-    return true;
   }
 
   function _approve(
@@ -255,15 +262,11 @@ contract Ecstasy is Context, IERC20, Ownable {
     require(recipient != address(0), "ERC20: transfer to the zero address");
     require(amount > 0, "Transfer amount must be greater than zero");
 
-    //indicates if fee should be deducted from transfer
     bool takeFee = true;
 
-    //if any account belongs to _isExcludedFromFee account then remove the fee
-    if (_isExcludedFromFee[sender] || _isExcludedFromFee[recipient]) {
+    if (_isExcludedFromFee[sender] || _isExcludedFromFee[recipient])
       takeFee = false;
-    }
 
-    //transfer amount, it will take tax, burn, liquidity fee
     _tokenTransfer(sender, recipient, amount, takeFee);
   }
 
@@ -305,7 +308,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     ) = _getValues(tAmount);
     _rOwned[sender] = _rOwned[sender].sub(rAmount);
     _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
-    _takeLottery(tLotteryFee);
+    _takeLotteryFee(tLotteryFee);
     _reflectFee(rFee, tTransactionFee);
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -326,7 +329,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _rOwned[sender] = _rOwned[sender].sub(rAmount);
     _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
     _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
-    _takeLottery(tLotteryFee);
+    _takeLotteryFee(tLotteryFee);
     _reflectFee(rFee, tTransactionFee);
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -347,7 +350,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _tOwned[sender] = _tOwned[sender].sub(tAmount);
     _rOwned[sender] = _rOwned[sender].sub(rAmount);
     _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
-    _takeLottery(tLotteryFee);
+    _takeLotteryFee(tLotteryFee);
     _reflectFee(rFee, tTransactionFee);
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -369,7 +372,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _rOwned[sender] = _rOwned[sender].sub(rAmount);
     _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
     _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
-    _takeLottery(tLotteryFee);
+    _takeLotteryFee(tLotteryFee);
     _reflectFee(rFee, tTransactionFee);
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -379,7 +382,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _tFeeTotal = _tFeeTotal.add(tTransactionFee);
   }
 
-  function _takeLottery(uint256 tLotteryFee) private {
+  function _takeLotteryFee(uint256 tLotteryFee) private {
     uint256 currentRate = _getRate();
     uint256 rLotteryFee = tLotteryFee.mul(currentRate);
     _rOwned[address(this)] = _rOwned[address(this)].add(rLotteryFee);
@@ -389,18 +392,54 @@ contract Ecstasy is Context, IERC20, Ownable {
   }
 
   function _distributePot(address account) private {
-    uint256 reward;
+    uint256 reward = _rOwned[address(this)];
 
-    if (_isExcluded[address(this)]) {
-      reward = _tOwned[address(this)];
-      _tOwned[address(this)] = 0;
-    } else {
-      reward = _rOwned[address(this)];
-      _rOwned[address(this)] = 0;
+    if (_isExcluded[address(this)])
+      /*
+       * Winner is always included in reward, so convert token to reflection
+       * Do NOT take fees during the conversion
+       */
+      reward = reflectionFromToken(_tOwned[address(this)], false);
+
+    uint256 tax = calculateLotteryTax(reward);
+    uint256 rewardMinusTax = reward.sub(tax);
+
+    _rOwned[account] = _rOwned[account].add(rewardMinusTax);
+
+    /* for some fucking reason the full reward also gets transferred
+     * to the owner if we need to get the current rate (if contract is excluded)
+     *
+     * COME BACK TO THIS
+     */
+    _takeLotteryTax(tax, reward, _isExcluded[address(this)]);
+    _resetPot();
+  }
+
+  function _takeLotteryTax(
+    uint256 tax,
+    uint256 reward,
+    bool removeReward
+  ) private {
+    address owner = owner();
+
+    _rOwned[owner] = _rOwned[owner].add(tax);
+
+    /* for some fucking reason the full reward also gets transferred
+     * to the owner if we need to get the current rate (if contract is excluded)
+     *
+     * COME BACK TO THIS
+     */
+    if (removeReward) _rOwned[owner] = _rOwned[owner].sub(reward);
+
+    if (_isExcluded[owner]) {
+      tax = tokenFromReflection(tax);
+      _tOwned[owner] = _tOwned[owner].add(tax);
     }
+  }
 
-    _rOwned[account] = _rOwned[account].add(reward);
-    emit Transfer(address(this), account, reward);
+  function _resetPot() private {
+    if (_isExcluded[address(this)]) _tOwned[address(this)] = 0;
+    else _rOwned[address(this)] = 0;
   }
 
   function _getValues(uint256 tAmount)
@@ -440,8 +479,8 @@ contract Ecstasy is Context, IERC20, Ownable {
     )
   {
     uint256 tTransactionFee = calculateTransactionFee(tAmount);
-    uint256 tLotteryFee = tAmount.mul(_lotteryFee).div(10**2);
-    uint256 tTransferAmount = tAmount.sub(tTransactionFee); //.sub(tLotteryFee)
+    uint256 tLotteryFee = calculateLotteryFee(tAmount);
+    uint256 tTransferAmount = tAmount.sub(tTransactionFee).sub(tLotteryFee);
     return (tTransferAmount, tTransactionFee, tLotteryFee);
   }
 
@@ -496,6 +535,10 @@ contract Ecstasy is Context, IERC20, Ownable {
     return _amount.mul(_lotteryFee).div(10**2);
   }
 
+  function calculateLotteryTax(uint256 _amount) private view returns (uint256) {
+    return _amount.mul(_lotteryTax).div(10**2);
+  }
+
   function removeAllFee() private {
     if (_transactionFee == 0 && _lotteryFee == 0) return;
 
@@ -511,16 +554,6 @@ contract Ecstasy is Context, IERC20, Ownable {
     _lotteryFee = _previousLotteryFee;
   }
 
-  function setTransactionFee(uint256 fee) public onlyOwner {
-    _previousTransactionFee = _transactionFee;
-    _transactionFee = fee;
-  }
-
-  function setLotteryFee(uint256 fee) public onlyOwner {
-    _previousLotteryFee = _lotteryFee;
-    _lotteryFee = fee;
-  }
-
   function excludeFromFee(address account) public onlyOwner {
     _isExcludedFromFee[account] = true;
   }
@@ -531,5 +564,20 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   function isExcludedFromFee(address account) public view returns (bool) {
     return _isExcludedFromFee[account];
+  }
+
+  function setTransactionFee(uint256 fee) public onlyOwner {
+    _previousTransactionFee = _transactionFee;
+    _transactionFee = fee;
+  }
+
+  function setLotteryFee(uint256 fee) public onlyOwner {
+    _previousLotteryFee = _lotteryFee;
+    _lotteryFee = fee;
+  }
+
+  function setLotteryTax(uint256 tax) public onlyOwner {
+    _previousLotteryTax = _lotteryTax;
+    _lotteryTax = tax;
   }
 }
