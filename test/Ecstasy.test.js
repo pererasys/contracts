@@ -454,6 +454,22 @@ contract("Ecstasy", (accounts) => {
     }
   });
 
+  it("setLotteryInterval - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.setLotteryInterval(10, false, { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
   it("distributePot - should throw error (onlyOwner)", async () => {
     const instance = await Ecstasy.new();
     const notOwner = accounts[5];
