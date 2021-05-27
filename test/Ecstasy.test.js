@@ -262,6 +262,9 @@ contract("Ecstasy", (accounts) => {
 
     const currentPot = await instance.currentPot();
 
+    // update lottery interval to avoid error
+    await instance.setLotteryInterval(0, true);
+
     await instance.distributePot(recipient);
 
     const ownerBalance = await instance.balanceOf(owner);
@@ -314,6 +317,9 @@ contract("Ecstasy", (accounts) => {
     await instance.setLotteryTax(newLotteryTax);
 
     const currentPot = await instance.currentPot();
+
+    // update lottery interval to avoid error
+    await instance.setLotteryInterval(0, true);
 
     await instance.distributePot(recipient);
 
@@ -461,6 +467,17 @@ contract("Ecstasy", (accounts) => {
         "Ownable: caller is not the owner",
         "Did not throw correct error"
       );
+    }
+  });
+
+  it("distributePot - should throw error (UNAVAILABLE)", async () => {
+    const instance = await Ecstasy.new();
+
+    try {
+      await instance.distributePot(accounts[1]);
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(e.reason, "UNAVAILABLE", "Did not throw correct error");
     }
   });
 });

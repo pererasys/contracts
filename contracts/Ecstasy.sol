@@ -47,12 +47,13 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   uint256 private _transactionFee = 2;
   uint256 private _previousTransactionFee = _transactionFee;
-
   uint256 private _lotteryFee = 3;
   uint256 private _previousLotteryFee = _lotteryFee;
 
   uint256 private _lotteryTax = 2;
-  uint256 private _previousLotteryTax = _lotteryTax;
+
+  uint256 private _lotteryInterval = 7 days;
+  uint256 private _nextLottery = block.timestamp + _lotteryInterval;
 
   string private _name = "Ecstasy";
   string private _symbol = "E";
@@ -91,6 +92,10 @@ contract Ecstasy is Context, IERC20, Ownable {
   function balanceOf(address account) public view override returns (uint256) {
     if (_isExcluded[account]) return _tOwned[account];
     return tokenFromReflection(_rOwned[account]);
+  }
+
+  function nextLottery() public view returns (uint256) {
+    return _nextLottery;
   }
 
   function currentPot() public view returns (uint256) {
@@ -235,6 +240,7 @@ contract Ecstasy is Context, IERC20, Ownable {
   }
 
   function distributePot(address account) public onlyOwner() {
+    require(block.timestamp > _nextLottery, "UNAVAILABLE");
     require(!_isExcluded[account], "Winner must not be excluded from rewards");
     _distributePot(account);
   }
@@ -410,7 +416,7 @@ contract Ecstasy is Context, IERC20, Ownable {
      * COME BACK TO THIS
      */
     _takeLotteryTax(tax, reward, _isExcluded[address(this)]);
-    _resetPot();
+    _resetLottery();
   }
 
   function _takeLotteryTax(
@@ -435,7 +441,8 @@ contract Ecstasy is Context, IERC20, Ownable {
     }
   }
 
-  function _resetPot() private {
+  function _resetLottery() private {
+    _nextLottery = block.timestamp + 7 days;
     if (_isExcluded[address(this)]) _tOwned[address(this)] = 0;
     else _rOwned[address(this)] = 0;
   }
@@ -578,7 +585,11 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   function setLotteryTax(uint256 tax) public onlyOwner {
     require(tax <= 100, "Tax cannot be greater than 100%");
-    _previousLotteryTax = _lotteryTax;
     _lotteryTax = tax;
+  }
+
+  function setLotteryInterval(uint256 interval, bool update) public onlyOwner {
+    if (update) _nextLottery = _nextLottery - _lotteryInterval + interval;
+    _lotteryInterval = interval;
   }
 }
