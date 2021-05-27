@@ -10,9 +10,7 @@
  * 05/26/2021
  * - Reference some concepts from SAFEMOON (https://github.com/safemoonprotocol/Safemoon.sol)
  *   - Exclude some accounts from fees
- *   - Add system to exclude addresses from fees
- *   - Ability to update fee structure
- *   - Add lottery fee collection
+ *   - Add ability to update fee structure
  * - Add transaction fee
  * - Add lottery fee
  * - Add lottery distribution
@@ -95,7 +93,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     return tokenFromReflection(_rOwned[account]);
   }
 
-  function potTotal() public view returns (uint256) {
+  function currentPot() public view returns (uint256) {
     if (_isExcluded[address(this)]) return _tOwned[address(this)];
     return tokenFromReflection(_rOwned[address(this)]);
   }
