@@ -256,4 +256,178 @@ contract("Ecstasy", (accounts) => {
     );
     assert.equal(ownerBalance, expectedOwnerBalance, "OWNER balance mismatch");
   });
+
+  it("should distribute pot with updated tax structure", async () => {
+    const instance = await Ecstasy.new();
+
+    const owner = await instance.owner();
+    const recipient = accounts[1];
+
+    const from = accounts[0];
+    const to = accounts[1];
+
+    // ensure both parties are included in fees
+    await instance.includeInFee(from);
+    await instance.includeInFee(to);
+
+    const transferAmount = 100000;
+    await instance.transfer(to, transferAmount, { from });
+
+    const initialOwnerBalance = await instance.balanceOf(owner);
+    const initialRecipientBalance = await instance.balanceOf(recipient);
+
+    // update the tax
+    const newLotteryTax = DEFAULT_LOTTERY_TAX + 2;
+    await instance.setLotteryTax(newLotteryTax);
+
+    const currentPot = await instance.currentPot();
+
+    await instance.distributePot(recipient);
+
+    const ownerBalance = await instance.balanceOf(owner);
+    const recipientBalance = await instance.balanceOf(recipient);
+
+    const expectedOwnerTax = (currentPot * newLotteryTax) / 10 ** 2;
+    const expectedReward = currentPot - expectedOwnerTax;
+
+    const expectedRecipientBalance =
+      parseInt(initialRecipientBalance) + parseInt(expectedReward);
+    const expectedOwnerBalance =
+      parseInt(initialOwnerBalance) + parseInt(expectedOwnerTax);
+
+    assert.equal(
+      recipientBalance,
+      expectedRecipientBalance,
+      "RECIPIENT balance mismatch"
+    );
+    assert.equal(ownerBalance, expectedOwnerBalance, "OWNER balance mismatch");
+  });
+
+  it("setTransactionFee - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.setTransactionFee(3, { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("setLotteryFee - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.setLotteryFee(3, { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("setLotteryTax - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.setLotteryTax(3, { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("excludeFromFee - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.excludeFromFee(accounts[1], { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("includeInFee - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.includeInFee(accounts[1], { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("excludeAccount - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.excludeAccount(accounts[1], { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("includeAccount - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.includeAccount(accounts[1], { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
+
+  it("distributePot - should throw error (onlyOwner)", async () => {
+    const instance = await Ecstasy.new();
+    const notOwner = accounts[5];
+
+    try {
+      await instance.distributePot(accounts[1], { from: notOwner });
+      throw new Error("not the expected error");
+    } catch (e) {
+      assert.equal(
+        e.reason,
+        "Ownable: caller is not the owner",
+        "Did not throw correct error"
+      );
+    }
+  });
 });

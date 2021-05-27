@@ -565,16 +565,19 @@ contract Ecstasy is Context, IERC20, Ownable {
   }
 
   function setTransactionFee(uint256 fee) public onlyOwner {
+    require(fee <= 100, "Fee cannot be greater than 100%");
     _previousTransactionFee = _transactionFee;
     _transactionFee = fee;
   }
 
   function setLotteryFee(uint256 fee) public onlyOwner {
+    require(fee <= 100, "Fee cannot be greater than 100%");
     _previousLotteryFee = _lotteryFee;
     _lotteryFee = fee;
   }
 
   function setLotteryTax(uint256 tax) public onlyOwner {
+    require(tax <= 100, "Tax cannot be greater than 100%");
     _previousLotteryTax = _lotteryTax;
     _lotteryTax = tax;
   }
