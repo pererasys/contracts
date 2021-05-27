@@ -177,6 +177,11 @@ contract("Ecstasy", (accounts) => {
     const expectedPot = (transferAmount * DEFAULT_LOTTERY_FEE) / 10 ** 2;
     const expectedTotalFees = expectedFees + expectedPot;
 
+    // IMPORTANT: ensure the total supply has not changed
+    const totalSupply = await instance.totalSupply();
+    const expectedSupply = parseInt(balanceFrom) + parseInt(balanceTo);
+    assert.equal(totalSupply, expectedSupply, "Supply mismatch");
+
     assert.equal(
       balanceFrom,
       initialBalanceFrom - transferAmount,
@@ -240,7 +245,7 @@ contract("Ecstasy", (accounts) => {
     const instance = await Ecstasy.new();
 
     const owner = await instance.owner();
-    const recipient = accounts[1];
+    const recipient = accounts[2];
 
     const from = accounts[0];
     const to = accounts[1];
@@ -260,6 +265,7 @@ contract("Ecstasy", (accounts) => {
     await instance.distributePot(recipient);
 
     const ownerBalance = await instance.balanceOf(owner);
+    const toBalance = await instance.balanceOf(to);
     const recipientBalance = await instance.balanceOf(recipient);
 
     const expectedOwnerTax = (currentPot * DEFAULT_LOTTERY_TAX) / 10 ** 2;
@@ -269,6 +275,12 @@ contract("Ecstasy", (accounts) => {
       parseInt(initialRecipientBalance) + parseInt(expectedReward);
     const expectedOwnerBalance =
       parseInt(initialOwnerBalance) + parseInt(expectedOwnerTax);
+
+    // IMPORTANT: ensure the total supply has not changed
+    const totalSupply = await instance.totalSupply();
+    const expectedSupply =
+      parseInt(ownerBalance) + parseInt(toBalance) + parseInt(recipientBalance);
+    assert.equal(totalSupply, expectedSupply, "Supply mismatch");
 
     assert.equal(
       recipientBalance,
