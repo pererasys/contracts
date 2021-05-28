@@ -1,9 +1,9 @@
 {
   "name": "ecstasy",
   "version": "1.0.0",
-  "description": "Ecstasy smart contract",
+  "description": "Ecstasy smart contracts",
   "main": "",
-  "repository": "https://github.com/pererasys/ecstasy.git",
+  "repository": "https://github.com/ecstasyfinance/contracts.git",
   "author": "Andrew Perera <pererasys@gmail.com>",
   "license": "GPL-3.0",
   "scripts": {

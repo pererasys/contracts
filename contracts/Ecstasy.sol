@@ -45,15 +45,19 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _rTotal = (MAX - (MAX % _tTotal));
   uint256 private _tFeeTotal;
 
-  uint256 private _transactionFee = 2;
-  uint256 private _previousTransactionFee = _transactionFee;
-  uint256 private _lotteryFee = 3;
+  uint256 private _transferFee = 1;
+  uint256 private _previousTransferFee = _transferFee;
+  uint256 private _lotteryFee = 2;
   uint256 private _previousLotteryFee = _lotteryFee;
 
   uint256 private _lotteryTax = 2;
 
+  /*
+   * Initialize the next lottery to NOW so we can set a Lambda schedule
+   * After the first distribution, the lottery schedule will reflect the interval
+   */
+  uint256 private _nextLottery = block.timestamp;
   uint256 private _lotteryInterval = 7 days;
-  uint256 private _nextLottery = block.timestamp + _lotteryInterval;
 
   string private _name = "Ecstasy";
   string private _symbol = "E";
@@ -533,7 +537,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     view
     returns (uint256)
   {
-    return _amount.mul(_transactionFee).div(10**2);
+    return _amount.mul(_transferFee).div(10**2);
   }
 
   function calculateLotteryFee(uint256 _amount) private view returns (uint256) {
@@ -545,17 +549,17 @@ contract Ecstasy is Context, IERC20, Ownable {
   }
 
   function removeAllFee() private {
-    if (_transactionFee == 0 && _lotteryFee == 0) return;
+    if (_transferFee == 0 && _lotteryFee == 0) return;
 
-    _previousTransactionFee = _transactionFee;
+    _previousTransferFee = _transferFee;
     _previousLotteryFee = _lotteryFee;
 
-    _transactionFee = 0;
+    _transferFee = 0;
     _lotteryFee = 0;
   }
 
   function restoreAllFee() private {
-    _transactionFee = _previousTransactionFee;
+    _transferFee = _previousTransferFee;
     _lotteryFee = _previousLotteryFee;
   }
 
@@ -573,8 +577,8 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   function setTransactionFee(uint256 fee) public onlyOwner {
     require(fee <= 100, "Fee cannot be greater than 100%");
-    _previousTransactionFee = _transactionFee;
-    _transactionFee = fee;
+    _previousTransferFee = _transferFee;
+    _transferFee = fee;
   }
 
   function setLotteryFee(uint256 fee) public onlyOwner {

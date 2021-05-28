@@ -6,13 +6,13 @@ Based on RFI, Ecstasy takes a transaction fee from each transfer. 2% will be imm
 
 ### Transaction Fees
 
-**Default fee: 2%**
+**Default fee: 1%**
 
 Transaction fees are taken from each transfer unless either the sender or recipient are excluded from fee collection. These fees will be automatically reflected in each holders balance, unless they are excluded from rewards. Accounts with larger balances will see a greater reward from this process. The default fee of 2% can be changed by the owner of the contract at any point.
 
 ### Lottery Fees
 
-**Default fee: 3%**
+**Default fee: 2%**
 
 Lottery fees are also taken from each transfer unless either the sender or recipient are excluded from fee collection. These fees are collected over the course of a period of time and can be distributed to a specific account by the owner of the contract, unless the recipient is excluded from rewards. Once distributed, a 2% tax is collected by the owner of the contract to offset gas costs. Both the tax and initial transfer fee can be updated by the owner of the contract.
 

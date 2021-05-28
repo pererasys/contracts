@@ -2,9 +2,8 @@ const Ecstasy = artifacts.require("Ecstasy");
 
 const DEFAULT_SUPPLY = 100 * 10 ** 6 * 10 ** 9;
 
-const DEFAULT_TRANSFER_FEE = 2;
-const DEFAULT_LOTTERY_FEE = 3;
-const DEFAULT_TOTAL_FEE = DEFAULT_LOTTERY_FEE + DEFAULT_TRANSFER_FEE;
+const DEFAULT_TRANSFER_FEE = 1;
+const DEFAULT_LOTTERY_FEE = 2;
 
 const DEFAULT_LOTTERY_TAX = 2;
 
@@ -488,6 +487,9 @@ contract("Ecstasy", (accounts) => {
 
   it("distributePot - should throw error (UNAVAILABLE)", async () => {
     const instance = await Ecstasy.new();
+
+    const interval = 30 * 60 * 60 * 24; // 30 days
+    await instance.setLotteryInterval(interval, true);
 
     try {
       await instance.distributePot(accounts[1]);
