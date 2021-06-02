@@ -12,12 +12,10 @@
     "compile": "truffle compile",
     "deploy": "truffle migrate --network bsc",
     "deploy:dev": "truffle migrate --network development",
-    "deploy:test": "truffle migrate --network testnet",
-    "format": "prettier --write 'contracts/**/*.sol'",
-    "lint": "prettier --list-different 'contracts/**/*.sol'"
+    "deploy:test": "truffle migrate --network testnet"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.1.0",
+    "@openzeppelin/contracts": "3.4.0",
     "@truffle/hdwallet-provider": "^1.4.0",
     "truffle": "^5.3.7"
   },

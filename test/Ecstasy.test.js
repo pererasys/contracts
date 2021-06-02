@@ -264,7 +264,7 @@ contract("Ecstasy", (accounts) => {
     // update lottery interval to avoid error
     await instance.setLotteryInterval(0, true);
 
-    await instance.distributePot(recipient);
+    await instance.distribute(recipient);
 
     const ownerBalance = await instance.balanceOf(owner);
     const toBalance = await instance.balanceOf(to);
@@ -320,7 +320,7 @@ contract("Ecstasy", (accounts) => {
     // update lottery interval to avoid error
     await instance.setLotteryInterval(0, true);
 
-    await instance.distributePot(recipient);
+    await instance.distribute(recipient);
 
     const ownerBalance = await instance.balanceOf(owner);
     const recipientBalance = await instance.balanceOf(recipient);
@@ -469,30 +469,30 @@ contract("Ecstasy", (accounts) => {
     }
   });
 
-  it("distributePot - should throw error (onlyOwner)", async () => {
+  it("distribute - should throw error (onlyDistributor)", async () => {
     const instance = await Ecstasy.new();
     const notOwner = accounts[5];
 
     try {
-      await instance.distributePot(accounts[1], { from: notOwner });
+      await instance.distribute(accounts[1], { from: notOwner });
       throw new Error("not the expected error");
     } catch (e) {
       assert.equal(
         e.reason,
-        "Ownable: caller is not the owner",
+        "Distributable: caller is not the distributor",
         "Did not throw correct error"
       );
     }
   });
 
-  it("distributePot - should throw error (UNAVAILABLE)", async () => {
+  it("distribute - should throw error (UNAVAILABLE)", async () => {
     const instance = await Ecstasy.new();
 
     const interval = 30 * 60 * 60 * 24; // 30 days
     await instance.setLotteryInterval(interval, true);
 
     try {
-      await instance.distributePot(accounts[1]);
+      await instance.distribute(accounts[1]);
       throw new Error("not the expected error");
     } catch (e) {
       assert.equal(e.reason, "UNAVAILABLE", "Did not throw correct error");
