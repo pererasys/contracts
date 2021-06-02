@@ -337,7 +337,8 @@ contract Ecstasy is Context, IERC20, Ownable, Distributable, usingProvable {
     ) {
       uint256 ceiling = _distributionSet.length;
       uint256 id = uint256(keccak256(abi.encodePacked(_result))) % ceiling;
-      _distribute(_distributionSet[id]);
+      address recipient = _distributionSet[id];
+      _distribute(recipient);
     } else revert("Unverified distribution");
   }
 
