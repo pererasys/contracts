@@ -14,7 +14,7 @@ Transaction fees are taken from each transfer unless either the sender or recipi
 
 **Default fee: 2%**
 
-Lottery fees are also taken from each transfer unless either the sender or recipient are excluded from fee collection. These fees are collected over the course of a period of time and can be distributed to a specific account by the owner of the contract, unless the recipient is excluded from rewards. Once distributed, a 2% tax is collected by the owner of the contract to offset gas costs. Both the tax and initial transfer fee can be updated by the owner of the contract.
+Lottery fees are also taken from each transfer unless either the sender or recipient are excluded from fee collection. These fees are collected over the course of a period of time and can be distributed to a specific account by the owner of the contract, unless the recipient is excluded from rewards. Once distributed, a 2% tax is collected by the distributor to offset gas costs. Both the tax and initial transfer fee can be updated by the owner of the contract.
 
 Because we want to implement a lottery system, we need to devise of a way of randomly selecting an account. Due to the expensive (computationally and monetarily) nature of selecting a random account inside the blockchain, this selection process will be automated off-chain.
 

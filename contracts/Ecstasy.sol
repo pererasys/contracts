@@ -35,6 +35,23 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./ProvableAPI.sol";
 
+/**
+ * @dev
+ * Utilities for the Ecstasy contract. Using a library to reduce
+ * the overall size of our contract.
+ */
+library EcstasyUtils {
+  using SafeMath for uint256;
+
+  function calculateFee(uint256 _amount, uint8 _rate)
+    internal
+    pure
+    returns (uint256)
+  {
+    return _amount.mul(_rate).div(10**2);
+  }
+}
+
 contract Ecstasy is Context, IERC20, Ownable, usingProvable {
   using SafeMath for uint256;
   using Address for address;
@@ -66,19 +83,15 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
   uint256 private _rTotal = (MAX - (MAX % _tTotal));
   uint256 private _tFeeTotal;
 
-  uint256 private _transferFee = 1;
-  uint256 private _previousTransferFee = _transferFee;
-  uint256 private _lotteryFee = 2;
-  uint256 private _previousLotteryFee = _lotteryFee;
+  uint8 private _transferFee = 1;
+  uint8 private _previousTransferFee = _transferFee;
+  uint8 private _lotteryFee = 2;
+  uint8 private _previousLotteryFee = _lotteryFee;
 
-  /*
-   * Initialize the next lottery to NOW so we can set a Lambda schedule
-   * After the first distribution, the lottery schedule will reflect the interval
-   */
-  uint256 private _nextLottery = block.timestamp;
   uint256 private _lotteryInterval = 7 days;
+  uint256 private _nextLottery = block.timestamp + _lotteryInterval;
 
-  uint256 private _lotteryTax = 2;
+  uint8 private _lotteryTax = 2;
   address[] private _distributionSet;
 
   struct LotteryDistribution {
@@ -334,13 +347,13 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       uint256 rTransferAmount,
       uint256 rFee,
       uint256 tTransferAmount,
-      uint256 tTransactionFee,
+      uint256 tTransferFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
     _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
     _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectTransactionFee(rFee, tTransactionFee);
+    _reflectTransferFee(rFee, tTransferFee);
 
     if (_rOwned[sender].amount == 0) _removeFromDistributionSet(recipient);
 
@@ -357,14 +370,14 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       uint256 rTransferAmount,
       uint256 rFee,
       uint256 tTransferAmount,
-      uint256 tTransactionFee,
+      uint256 tTransferFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
     _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
     _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
     _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectTransactionFee(rFee, tTransactionFee);
+    _reflectTransferFee(rFee, tTransferFee);
 
     if (_rOwned[sender].amount == 0) _removeFromDistributionSet(recipient);
 
@@ -383,7 +396,7 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       uint256 rTransferAmount,
       uint256 rFee,
       uint256 tTransferAmount,
-      uint256 tTransactionFee,
+      uint256 tTransferFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
 
@@ -391,7 +404,7 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
     _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
     _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectTransactionFee(rFee, tTransactionFee);
+    _reflectTransferFee(rFee, tTransferFee);
 
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -406,7 +419,7 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       uint256 rTransferAmount,
       uint256 rFee,
       uint256 tTransferAmount,
-      uint256 tTransactionFee,
+      uint256 tTransferFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
     _tOwned[sender] = _tOwned[sender].sub(tAmount);
@@ -414,15 +427,13 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
     _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
     _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectTransactionFee(rFee, tTransactionFee);
+    _reflectTransferFee(rFee, tTransferFee);
     emit Transfer(sender, recipient, tTransferAmount);
   }
 
-  function _reflectTransactionFee(uint256 rFee, uint256 tTransactionFee)
-    private
-  {
+  function _reflectTransferFee(uint256 rFee, uint256 tTransferFee) private {
     _rTotal = _rTotal.sub(rFee);
-    _tFeeTotal = _tFeeTotal.add(tTransactionFee);
+    _tFeeTotal = _tFeeTotal.add(tTransferFee);
   }
 
   function _takeLotteryFee(uint256 tLotteryFee) private {
@@ -448,17 +459,17 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       uint256
     )
   {
-    (uint256 tTransferAmount, uint256 tTransactionFee, uint256 tLotteryFee) =
+    (uint256 tTransferAmount, uint256 tTransferFee, uint256 tLotteryFee) =
       _getTValues(tAmount);
     uint256 currentRate = _getRate();
     (uint256 rAmount, uint256 rTransferAmount, uint256 rTransactionFee) =
-      _getRValues(tAmount, tTransactionFee, tLotteryFee, currentRate);
+      _getRValues(tAmount, tTransferFee, tLotteryFee, currentRate);
     return (
       rAmount,
       rTransferAmount,
       rTransactionFee,
       tTransferAmount,
-      tTransactionFee,
+      tTransferFee,
       tLotteryFee
     );
   }
@@ -472,15 +483,15 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       uint256
     )
   {
-    uint256 tTransactionFee = _calculateTransactionFee(tAmount);
-    uint256 tLotteryFee = _calculateLotteryFee(tAmount);
-    uint256 tTransferAmount = tAmount.sub(tTransactionFee).sub(tLotteryFee);
-    return (tTransferAmount, tTransactionFee, tLotteryFee);
+    uint256 tTransferFee = EcstasyUtils.calculateFee(tAmount, _transferFee);
+    uint256 tLotteryFee = EcstasyUtils.calculateFee(tAmount, _lotteryFee);
+    uint256 tTransferAmount = tAmount.sub(tTransferFee).sub(tLotteryFee);
+    return (tTransferAmount, tTransferFee, tLotteryFee);
   }
 
   function _getRValues(
     uint256 tAmount,
-    uint256 tTransactionFee,
+    uint256 tTransferFee,
     uint256 tLotteryFee,
     uint256 currentRate
   )
@@ -493,7 +504,7 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
     )
   {
     uint256 rAmount = tAmount.mul(currentRate);
-    uint256 rTransactionFee = tTransactionFee.mul(currentRate);
+    uint256 rTransactionFee = tTransferFee.mul(currentRate);
     uint256 rLotteryFee = tLotteryFee.mul(currentRate);
     uint256 rTransferAmount = rAmount.sub(rTransactionFee).sub(rLotteryFee);
     return (rAmount, rTransferAmount, rTransactionFee);
@@ -520,9 +531,11 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
   }
 
   function distribute() public {
-    require(block.timestamp > _nextLottery, "UNAVAILABLE");
+    require(block.timestamp > _nextLottery, "Distribution is unavailable");
     require(!_isExcluded[_msgSender()], "Distributor is excluded");
-    _resetLottery();
+
+    // reset the next lottery to avoid multiple distributions
+    _nextLottery = block.timestamp + _lotteryInterval;
 
     uint256 reward = _rOwned[address(this)].amount;
 
@@ -530,46 +543,41 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
       reward = reflectionFromToken(_tOwned[address(this)], false);
 
     //fetch a new random number hash to select a recipient
-    bytes32 query = provable_newRandomDSQuery(0, 7, 200000);
-    _ongoingDistributions[query] = LotteryDistribution(reward, _msgSender());
+    bytes32 id = provable_newRandomDSQuery(0, 7, 200000);
+    _ongoingDistributions[id] = LotteryDistribution(reward, _msgSender());
   }
 
   function __callback(
-    bytes32 _query,
+    bytes32 _queryId,
     string memory _result,
     bytes memory _proof
   ) public override {
     require(msg.sender == provable_cbAddress());
     if (
-      provable_randomDS_proofVerify__returnCode(_query, _result, _proof) == 0
+      provable_randomDS_proofVerify__returnCode(_queryId, _result, _proof) == 0
     ) {
       uint256 ceiling = _distributionSet.length;
       uint256 id = uint256(keccak256(abi.encodePacked(_result))) % ceiling;
       address recipient = _distributionSet[id];
-      _distribute(_query, recipient);
+      _distribute(_queryId, recipient);
     } else revert("Unverified distribution");
   }
 
-  function _distribute(bytes32 _id, address recipient) private {
-    uint256 reward = _ongoingDistributions[_id].reward;
+  function _distribute(bytes32 id, address recipient) private {
+    uint256 reward = _ongoingDistributions[id].reward;
 
-    uint256 tax = _calculateLotteryTax(_lotteryTax);
+    uint256 tax = EcstasyUtils.calculateFee(reward, _lotteryTax);
     uint256 rewardMinusTax = reward.sub(tax);
 
     _rOwned[recipient].amount = _rOwned[recipient].amount.add(rewardMinusTax);
 
     emit Transfer(address(this), recipient, rewardMinusTax);
 
-    _takeLotteryTax(_ongoingDistributions[_id].distributor, tax, reward);
-
-    delete _ongoingDistributions[_id];
+    _takeLotteryTax(_ongoingDistributions[id].distributor, tax);
+    _resetLottery(id);
   }
 
-  function _takeLotteryTax(
-    address distributor,
-    uint256 tax,
-    uint256 reward
-  ) private {
+  function _takeLotteryTax(address distributor, uint256 tax) private {
     _rOwned[distributor].amount = _rOwned[distributor].amount.add(tax);
 
     if (_isExcluded[distributor]) {
@@ -578,8 +586,8 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
     }
   }
 
-  function _resetLottery() private {
-    _nextLottery = block.timestamp + _lotteryInterval;
+  function _resetLottery(bytes32 id) private {
+    delete _ongoingDistributions[id];
     if (_isExcluded[address(this)]) _tOwned[address(this)] = 0;
     _rOwned[address(this)].amount = 0;
   }
@@ -617,30 +625,6 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
     _lotteryFee = _previousLotteryFee;
   }
 
-  function _calculateTransactionFee(uint256 _amount)
-    private
-    view
-    returns (uint256)
-  {
-    return _amount.mul(_transferFee).div(10**2);
-  }
-
-  function _calculateLotteryFee(uint256 _amount)
-    private
-    view
-    returns (uint256)
-  {
-    return _amount.mul(_lotteryFee).div(10**2);
-  }
-
-  function _calculateLotteryTax(uint256 _amount)
-    private
-    view
-    returns (uint256)
-  {
-    return _amount.mul(_lotteryTax).div(10**2);
-  }
-
   function excludeFromFee(address account) public onlyOwner {
     _isExcludedFromFee[account] = true;
   }
@@ -653,19 +637,19 @@ contract Ecstasy is Context, IERC20, Ownable, usingProvable {
     return _isExcludedFromFee[account];
   }
 
-  function setTransactionFee(uint256 fee) public onlyOwner {
+  function setTransferFee(uint8 fee) public onlyOwner {
     require(fee <= 100, "Fee cannot be greater than 100%");
     _previousTransferFee = _transferFee;
     _transferFee = fee;
   }
 
-  function setLotteryFee(uint256 fee) public onlyOwner {
+  function setLotteryFee(uint8 fee) public onlyOwner {
     require(fee <= 100, "Fee cannot be greater than 100%");
     _previousLotteryFee = _lotteryFee;
     _lotteryFee = fee;
   }
 
-  function setLotteryTax(uint256 tax) public onlyOwner {
+  function setLotteryTax(uint8 tax) public onlyOwner {
     require(tax <= 100, "Tax cannot be greater than 100%");
     _lotteryTax = tax;
   }
