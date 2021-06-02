@@ -17,7 +17,11 @@
  * - Implement lottery tax to offset gas costs
  */
 
-pragma solidity ^0.8.4;
+/**
+ * Provable: > 0.6.1 < 0.7.0
+ * OpenZeppelin@3.4.0: > 0.6.0 < 0.8.0
+ */
+pragma solidity ^0.6.9;
 
 // SPDX-License-Identifier: GPL-3.0-only
 
@@ -25,13 +29,71 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "./ProvableAPI.sol";
 
-contract Ecstasy is Context, IERC20, Ownable {
+/**
+ * @dev
+ * Manages the distributor for the lottery system. The distributor takes a 2% tax
+ * from each lottery distribution to cover gas fees and more. Currently working on
+ * a system to swap the tax (tokens) for BNB.
+ *
+ * Based on the Ownable contract from OpenZeppelin
+ */
+abstract contract Distributable is Context, Ownable {
+  address private _distributor;
+
+  event DistributorChanged(
+    address indexed previousDistributor,
+    address indexed newDistributor
+  );
+
+  constructor() public {
+    address msgSender = _msgSender();
+    _distributor = msgSender;
+    emit DistributorChanged(address(0), msgSender);
+  }
+
+  function distributor() public view virtual returns (address) {
+    return _distributor;
+  }
+
+  modifier onlyDistributor() {
+    require(
+      distributor() == _msgSender(),
+      "Distributable: caller is not the distributor"
+    );
+    _;
+  }
+
+  function setDistributor(address newOwner) public virtual onlyOwner {
+    require(
+      newOwner != address(0),
+      "Distributable: new distributor is the zero address"
+    );
+    _distributor = newOwner;
+    emit DistributorChanged(_distributor, newOwner);
+  }
+}
+
+contract Ecstasy is Context, IERC20, Ownable, Distributable, usingProvable {
   using SafeMath for uint256;
   using Address for address;
 
-  mapping(address => uint256) private _rOwned;
+  /*
+   * We need to manage each account's distribution ID efficiently
+   * in order to include and exclude accounts from rewards. We do this
+   * by storing the account's distribution set index with its reflection ownership.
+   *
+   * Excluded accounts will have an ID of ~uint256(0) which is the maximum
+   * integer and assumed to be less than the length of the distribution set.
+   */
+  struct ReflectionOwnership {
+    uint256 id;
+    uint256 amount;
+  }
+
+  mapping(address => ReflectionOwnership) private _rOwned;
   mapping(address => uint256) private _tOwned;
   mapping(address => mapping(address => uint256)) private _allowances;
 
@@ -50,8 +112,6 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _lotteryFee = 2;
   uint256 private _previousLotteryFee = _lotteryFee;
 
-  uint256 private _lotteryTax = 2;
-
   /*
    * Initialize the next lottery to NOW so we can set a Lambda schedule
    * After the first distribution, the lottery schedule will reflect the interval
@@ -59,22 +119,33 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint256 private _nextLottery = block.timestamp;
   uint256 private _lotteryInterval = 7 days;
 
+  uint256 private _lotteryTax = 2;
+  address[] private _distributionSet;
+
   string private _name = "Ecstasy";
   string private _symbol = "E";
   uint8 private _decimals = 9;
 
-  constructor() {
-    _rOwned[_msgSender()] = _rTotal;
+  constructor() public {
+    address _contract = address(this);
+    address _distributor = distributor();
+    address _sender = _msgSender();
+
+    _distributionSet.push(_sender);
+    _rOwned[_sender].amount = _rTotal;
+    _rOwned[_sender].id = _distributionSet.length - 1;
 
     // exclude both the owner and the contract from all fees
-    _isExcludedFromFee[owner()] = true;
-    _isExcludedFromFee[address(this)] = true;
+    _isExcludedFromFee[_sender] = true;
+    _isExcludedFromFee[_contract] = true;
+    _isExcludedFromFee[_distributor] = true;
 
-    // exclude the contract from fee distribution
-    _isExcluded[address(this)] = true;
-    _excluded.push(address(this));
+    // exclude the contract from rewards
+    _rOwned[_contract].id = ~uint256(0);
+    _isExcluded[_contract] = true;
+    _excluded.push(_contract);
 
-    emit Transfer(address(0), _msgSender(), _tTotal);
+    emit Transfer(address(0), _sender, _tTotal);
   }
 
   function name() public view returns (string memory) {
@@ -89,13 +160,13 @@ contract Ecstasy is Context, IERC20, Ownable {
     return _decimals;
   }
 
-  function totalSupply() public pure override returns (uint256) {
+  function totalSupply() public view override returns (uint256) {
     return _tTotal;
   }
 
   function balanceOf(address account) public view override returns (uint256) {
     if (_isExcluded[account]) return _tOwned[account];
-    return tokenFromReflection(_rOwned[account]);
+    return tokenFromReflection(_rOwned[account].amount);
   }
 
   function nextLottery() public view returns (uint256) {
@@ -104,7 +175,7 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   function currentPot() public view returns (uint256) {
     if (_isExcluded[address(this)]) return _tOwned[address(this)];
-    return tokenFromReflection(_rOwned[address(this)]);
+    return tokenFromReflection(_rOwned[address(this)].amount);
   }
 
   function transfer(address recipient, uint256 amount)
@@ -195,7 +266,7 @@ contract Ecstasy is Context, IERC20, Ownable {
       "Excluded addresses cannot call this function"
     );
     (uint256 rAmount, , , , , ) = _getValues(tAmount);
-    _rOwned[sender] = _rOwned[sender].sub(rAmount);
+    _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
     _rTotal = _rTotal.sub(rAmount);
     _tFeeTotal = _tFeeTotal.add(tAmount);
   }
@@ -223,11 +294,12 @@ contract Ecstasy is Context, IERC20, Ownable {
 
   function excludeAccount(address account) external onlyOwner() {
     require(!_isExcluded[account], "Account is already excluded");
-    if (_rOwned[account] > 0) {
-      _tOwned[account] = tokenFromReflection(_rOwned[account]);
+    if (_rOwned[account].amount > 0) {
+      _tOwned[account] = tokenFromReflection(_rOwned[account].amount);
     }
     _isExcluded[account] = true;
     _excluded.push(account);
+    _removeFromDistributionSet(account);
   }
 
   function includeAccount(address account) external onlyOwner() {
@@ -238,15 +310,72 @@ contract Ecstasy is Context, IERC20, Ownable {
         _tOwned[account] = 0;
         _isExcluded[account] = false;
         _excluded.pop();
+        if (_rOwned[account].amount > 0) {
+          _addToDistributionSet(account);
+        }
         break;
       }
     }
   }
 
-  function distributePot(address account) public onlyOwner() {
+  function distribute() public onlyDistributor() {
     require(block.timestamp > _nextLottery, "UNAVAILABLE");
-    require(!_isExcluded[account], "Winner must not be excluded from rewards");
-    _distributePot(account);
+    provable_newRandomDSQuery(0, 7, 200000);
+  }
+
+  function __callback(
+    bytes32 _queryId,
+    string memory _result,
+    bytes memory _proof
+  ) public override {
+    require(msg.sender == provable_cbAddress());
+    if (
+      provable_randomDS_proofVerify__returnCode(_queryId, _result, _proof) == 0
+    ) {
+      uint256 ceiling = _distributionSet.length;
+      uint256 id = uint256(keccak256(abi.encodePacked(_result))) % ceiling;
+      _distribute(_distributionSet[id]);
+    } else revert("Unverified distribution");
+  }
+
+  function _distribute(address recipient) private {
+    uint256 reward = _rOwned[address(this)].amount;
+
+    if (_isExcluded[address(this)])
+      reward = reflectionFromToken(_tOwned[address(this)], false);
+
+    uint256 tax = _calculateLotteryTax(reward);
+    uint256 rewardMinusTax = reward.sub(tax);
+
+    _rOwned[recipient].amount = _rOwned[recipient].amount.add(rewardMinusTax);
+
+    emit Transfer(address(this), recipient, rewardMinusTax);
+
+    _takeLotteryTax(tax, reward, _isExcluded[address(this)]);
+    _resetLottery();
+  }
+
+  function _takeLotteryTax(
+    uint256 tax,
+    uint256 reward,
+    bool removeReward
+  ) private {
+    address distributor = distributor();
+
+    _rOwned[distributor].amount = _rOwned[distributor].amount.add(tax);
+
+    if (removeReward)
+      _rOwned[distributor].amount = _rOwned[distributor].amount.sub(reward);
+    if (_isExcluded[distributor]) {
+      tax = tokenFromReflection(tax);
+      _tOwned[distributor] = _tOwned[distributor].add(tax);
+    }
+  }
+
+  function _resetLottery() private {
+    _nextLottery = block.timestamp + _lotteryInterval;
+    if (_isExcluded[address(this)]) _tOwned[address(this)] = 0;
+    _rOwned[address(this)].amount = 0;
   }
 
   function _approve(
@@ -284,7 +413,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     uint256 amount,
     bool takeFee
   ) private {
-    if (!takeFee) removeAllFee();
+    if (!takeFee) _removeAllFee();
 
     if (_isExcluded[sender] && !_isExcluded[recipient]) {
       _transferFromExcluded(sender, recipient, amount);
@@ -298,7 +427,7 @@ contract Ecstasy is Context, IERC20, Ownable {
       _transferStandard(sender, recipient, amount);
     }
 
-    if (!takeFee) restoreAllFee();
+    if (!takeFee) _restoreAllFee();
   }
 
   function _transferStandard(
@@ -306,6 +435,8 @@ contract Ecstasy is Context, IERC20, Ownable {
     address recipient,
     uint256 tAmount
   ) private {
+    if (_rOwned[recipient].amount == 0) _addToDistributionSet(recipient);
+
     (
       uint256 rAmount,
       uint256 rTransferAmount,
@@ -314,10 +445,13 @@ contract Ecstasy is Context, IERC20, Ownable {
       uint256 tTransactionFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
-    _rOwned[sender] = _rOwned[sender].sub(rAmount);
-    _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
+    _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
+    _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectFee(rFee, tTransactionFee);
+    _reflectTransactionFee(rFee, tTransactionFee);
+
+    if (_rOwned[sender].amount == 0) _removeFromDistributionSet(recipient);
+
     emit Transfer(sender, recipient, tTransferAmount);
   }
 
@@ -334,11 +468,14 @@ contract Ecstasy is Context, IERC20, Ownable {
       uint256 tTransactionFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
-    _rOwned[sender] = _rOwned[sender].sub(rAmount);
+    _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
     _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
-    _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
+    _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectFee(rFee, tTransactionFee);
+    _reflectTransactionFee(rFee, tTransactionFee);
+
+    if (_rOwned[sender].amount == 0) _removeFromDistributionSet(recipient);
+
     emit Transfer(sender, recipient, tTransferAmount);
   }
 
@@ -347,6 +484,8 @@ contract Ecstasy is Context, IERC20, Ownable {
     address recipient,
     uint256 tAmount
   ) private {
+    if (_rOwned[recipient].amount == 0) _addToDistributionSet(recipient);
+
     (
       uint256 rAmount,
       uint256 rTransferAmount,
@@ -355,11 +494,13 @@ contract Ecstasy is Context, IERC20, Ownable {
       uint256 tTransactionFee,
       uint256 tLotteryFee
     ) = _getValues(tAmount);
+
     _tOwned[sender] = _tOwned[sender].sub(tAmount);
-    _rOwned[sender] = _rOwned[sender].sub(rAmount);
-    _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
+    _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
+    _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectFee(rFee, tTransactionFee);
+    _reflectTransactionFee(rFee, tTransactionFee);
+
     emit Transfer(sender, recipient, tTransferAmount);
   }
 
@@ -377,15 +518,17 @@ contract Ecstasy is Context, IERC20, Ownable {
       uint256 tLotteryFee
     ) = _getValues(tAmount);
     _tOwned[sender] = _tOwned[sender].sub(tAmount);
-    _rOwned[sender] = _rOwned[sender].sub(rAmount);
+    _rOwned[sender].amount = _rOwned[sender].amount.sub(rAmount);
     _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
-    _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
+    _rOwned[recipient].amount = _rOwned[recipient].amount.add(rTransferAmount);
     _takeLotteryFee(tLotteryFee);
-    _reflectFee(rFee, tTransactionFee);
+    _reflectTransactionFee(rFee, tTransactionFee);
     emit Transfer(sender, recipient, tTransferAmount);
   }
 
-  function _reflectFee(uint256 rFee, uint256 tTransactionFee) private {
+  function _reflectTransactionFee(uint256 rFee, uint256 tTransactionFee)
+    private
+  {
     _rTotal = _rTotal.sub(rFee);
     _tFeeTotal = _tFeeTotal.add(tTransactionFee);
   }
@@ -393,62 +536,12 @@ contract Ecstasy is Context, IERC20, Ownable {
   function _takeLotteryFee(uint256 tLotteryFee) private {
     uint256 currentRate = _getRate();
     uint256 rLotteryFee = tLotteryFee.mul(currentRate);
-    _rOwned[address(this)] = _rOwned[address(this)].add(rLotteryFee);
+    _rOwned[address(this)].amount = _rOwned[address(this)].amount.add(
+      rLotteryFee
+    );
 
     if (_isExcluded[address(this)])
       _tOwned[address(this)] = _tOwned[address(this)].add(tLotteryFee);
-  }
-
-  function _distributePot(address account) private {
-    uint256 reward = _rOwned[address(this)];
-
-    if (_isExcluded[address(this)])
-      /*
-       * Winner is always included in reward, so convert token to reflection
-       * Do NOT take fees during the conversion
-       */
-      reward = reflectionFromToken(_tOwned[address(this)], false);
-
-    uint256 tax = calculateLotteryTax(reward);
-    uint256 rewardMinusTax = reward.sub(tax);
-
-    _rOwned[account] = _rOwned[account].add(rewardMinusTax);
-
-    /* for some fucking reason the full reward also gets transferred
-     * to the owner if we need to get the current rate (if contract is excluded)
-     *
-     * COME BACK TO THIS
-     */
-    _takeLotteryTax(tax, reward, _isExcluded[address(this)]);
-    _resetLottery();
-  }
-
-  function _takeLotteryTax(
-    uint256 tax,
-    uint256 reward,
-    bool removeReward
-  ) private {
-    address owner = owner();
-
-    _rOwned[owner] = _rOwned[owner].add(tax);
-
-    /* for some fucking reason the full reward also gets transferred
-     * to the owner if we need to get the current rate (if contract is excluded)
-     *
-     * COME BACK TO THIS
-     */
-    if (removeReward) _rOwned[owner] = _rOwned[owner].sub(reward);
-
-    if (_isExcluded[owner]) {
-      tax = tokenFromReflection(tax);
-      _tOwned[owner] = _tOwned[owner].add(tax);
-    }
-  }
-
-  function _resetLottery() private {
-    _nextLottery = block.timestamp + _lotteryInterval;
-    if (_isExcluded[address(this)]) _tOwned[address(this)] = 0;
-    else _rOwned[address(this)] = 0;
   }
 
   function _getValues(uint256 tAmount)
@@ -487,8 +580,8 @@ contract Ecstasy is Context, IERC20, Ownable {
       uint256
     )
   {
-    uint256 tTransactionFee = calculateTransactionFee(tAmount);
-    uint256 tLotteryFee = calculateLotteryFee(tAmount);
+    uint256 tTransactionFee = _calculateTransactionFee(tAmount);
+    uint256 tLotteryFee = _calculateLotteryFee(tAmount);
     uint256 tTransferAmount = tAmount.sub(tTransactionFee).sub(tLotteryFee);
     return (tTransferAmount, tTransactionFee, tLotteryFee);
   }
@@ -523,16 +616,36 @@ contract Ecstasy is Context, IERC20, Ownable {
     uint256 rSupply = _rTotal;
     uint256 tSupply = _tTotal;
     for (uint256 i = 0; i < _excluded.length; i++) {
-      if (_rOwned[_excluded[i]] > rSupply || _tOwned[_excluded[i]] > tSupply)
-        return (_rTotal, _tTotal);
-      rSupply = rSupply.sub(_rOwned[_excluded[i]]);
+      if (
+        _rOwned[_excluded[i]].amount > rSupply ||
+        _tOwned[_excluded[i]] > tSupply
+      ) return (_rTotal, _tTotal);
+      rSupply = rSupply.sub(_rOwned[_excluded[i]].amount);
       tSupply = tSupply.sub(_tOwned[_excluded[i]]);
     }
     if (rSupply < _rTotal.div(_tTotal)) return (_rTotal, _tTotal);
     return (rSupply, tSupply);
   }
 
-  function calculateTransactionFee(uint256 _amount)
+  function _addToDistributionSet(address account) private {
+    _distributionSet.push(account);
+    _rOwned[account].id = _distributionSet.length - 1;
+  }
+
+  function _removeFromDistributionSet(address account) private {
+    uint256 id = _rOwned[account].id;
+
+    if (_distributionSet[id] == account) {
+      address swapped = _distributionSet[_distributionSet.length - 1];
+      _distributionSet[id] = swapped;
+      _rOwned[swapped].id = id;
+      _distributionSet.pop();
+    }
+
+    _rOwned[account].id = ~uint256(0);
+  }
+
+  function _calculateTransactionFee(uint256 _amount)
     private
     view
     returns (uint256)
@@ -540,15 +653,23 @@ contract Ecstasy is Context, IERC20, Ownable {
     return _amount.mul(_transferFee).div(10**2);
   }
 
-  function calculateLotteryFee(uint256 _amount) private view returns (uint256) {
+  function _calculateLotteryFee(uint256 _amount)
+    private
+    view
+    returns (uint256)
+  {
     return _amount.mul(_lotteryFee).div(10**2);
   }
 
-  function calculateLotteryTax(uint256 _amount) private view returns (uint256) {
+  function _calculateLotteryTax(uint256 _amount)
+    private
+    view
+    returns (uint256)
+  {
     return _amount.mul(_lotteryTax).div(10**2);
   }
 
-  function removeAllFee() private {
+  function _removeAllFee() private {
     if (_transferFee == 0 && _lotteryFee == 0) return;
 
     _previousTransferFee = _transferFee;
@@ -558,7 +679,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _lotteryFee = 0;
   }
 
-  function restoreAllFee() private {
+  function _restoreAllFee() private {
     _transferFee = _previousTransferFee;
     _lotteryFee = _previousLotteryFee;
   }
