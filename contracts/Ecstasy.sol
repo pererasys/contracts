@@ -15,6 +15,9 @@
  * - Add lottery fee
  * - Add lottery distribution
  * - Implement lottery tax to offset gas costs
+ *
+ * 06/01/2021
+ * - Update distribution logic (provable oracle for random distribution)
  */
 
 /**
