@@ -469,22 +469,6 @@ contract("Ecstasy", (accounts) => {
     }
   });
 
-  it("distribute - should throw error (onlyDistributor)", async () => {
-    const instance = await Ecstasy.new();
-    const notOwner = accounts[5];
-
-    try {
-      await instance.distribute(accounts[1], { from: notOwner });
-      throw new Error("not the expected error");
-    } catch (e) {
-      assert.equal(
-        e.reason,
-        "Distributable: caller is not the distributor",
-        "Did not throw correct error"
-      );
-    }
-  });
-
   it("distribute - should throw error (UNAVAILABLE)", async () => {
     const instance = await Ecstasy.new();
 

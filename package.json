@@ -10,9 +10,9 @@
     "develop": "truffle develop",
     "test": "truffle test",
     "compile": "truffle compile",
-    "deploy": "truffle migrate --network bsc",
     "deploy:dev": "truffle migrate --network development",
-    "deploy:test": "truffle migrate --network testnet"
+    "deploy:test": "truffle migrate --network testnet",
+    "sizeof": "grep \"deployedBytecode\" build/contracts/* | awk '{print $1 \" \" length($3)/2}'"
   },
   "dependencies": {
     "@openzeppelin/contracts": "3.4.0",
