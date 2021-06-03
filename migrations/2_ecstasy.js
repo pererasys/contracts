@@ -1,6 +1,8 @@
-var Ecstasy = artifacts.require("Ecstasy");
+const Lottery = artifacts.require("Lottery");
+const Ecstasy = artifacts.require("Ecstasy");
 
-module.exports = function (deployer) {
-  // deployment steps
-  deployer.deploy(Ecstasy);
+module.exports = async function (deployer) {
+  deployer.deploy(Lottery).then(function () {
+    return deployer.deploy(Ecstasy, Lottery.address);
+  });
 };

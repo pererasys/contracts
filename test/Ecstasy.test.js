@@ -1,4 +1,5 @@
 const Ecstasy = artifacts.require("Ecstasy");
+const Lottery = artifacts.require("Lottery");
 
 const DEFAULT_SUPPLY = 100 * 10 ** 6 * 10 ** 9;
 
@@ -7,58 +8,65 @@ const DEFAULT_LOTTERY_FEE = 2;
 
 const DEFAULT_LOTTERY_TAX = 2;
 
+const setup = async () => {
+  const lottery = await Lottery.new();
+  const instance = await Ecstasy.new(await lottery.address());
+
+  return instance;
+};
+
 contract("Ecstasy", (accounts) => {
   it("should have correct decimals", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const decimals = await instance.decimals();
 
     assert.equal(decimals, 9, "Decimals mismatch");
   });
 
   it("should have correct total supply", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const supply = await instance.totalSupply();
 
     assert.equal(supply, DEFAULT_SUPPLY, "Supply mismatch");
   });
 
   it("owner should have total supply at deployment", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const balance = await instance.balanceOf(accounts[0]);
 
     assert.equal(balance, DEFAULT_SUPPLY, "Balance mismatch");
   });
 
   it("owner should be excluded from fees by default", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const feeStatus = await instance.isExcludedFromFee(accounts[0]);
 
     assert.equal(feeStatus, true, "Owner fee status mismatch");
   });
 
   it("pot should be excluded from fees by default", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const feeStatus = await instance.isExcludedFromFee(instance.address);
 
     assert.equal(feeStatus, true, "Pot fee status mismatch");
   });
 
   it("pot should be empty", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const pot = await instance.currentPot();
 
     assert.equal(pot, 0, "Pot mismatch");
   });
 
   it("pot should be excluded from rewards by default", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const status = await instance.isExcluded(instance.address);
 
     assert.equal(status, true, "Pot exclusion status mismatch");
   });
 
   it("should exclude account from rewards", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const account = accounts[1];
 
@@ -74,7 +82,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("should include account in rewards", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const account = accounts[1];
 
@@ -90,7 +98,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("should exclude account from fees", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const account = accounts[1];
 
@@ -108,7 +116,7 @@ contract("Ecstasy", (accounts) => {
   it("should include account in fees", async () => {
     const account = accounts[1];
 
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     await instance.excludeFromFee(account);
     const initialStatus = await instance.isExcludedFromFee(account);
@@ -122,7 +130,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("should transfer without fees", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const from = accounts[0];
     const to = accounts[1];
@@ -152,7 +160,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("should transfer with fees", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const from = accounts[0];
     const to = accounts[1];
@@ -196,7 +204,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("should transfer with updated fee structure", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const from = accounts[0];
     const to = accounts[1];
@@ -240,8 +248,9 @@ contract("Ecstasy", (accounts) => {
     assert.equal(currentPot, expectedPot, "Pot mismatch");
   });
 
+  /*
   it("should distribute pot appropriately", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const owner = await instance.owner();
     const recipient = accounts[2];
@@ -293,7 +302,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("should distribute pot with updated tax structure", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
 
     const owner = await instance.owner();
     const recipient = accounts[1];
@@ -340,9 +349,9 @@ contract("Ecstasy", (accounts) => {
     );
     assert.equal(ownerBalance, expectedOwnerBalance, "OWNER balance mismatch");
   });
-
+  */
   it("setTransactionFee - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -358,7 +367,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("setLotteryFee - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -374,7 +383,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("setLotteryTax - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -390,7 +399,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("excludeFromFee - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -406,7 +415,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("includeInFee - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -422,7 +431,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("excludeAccount - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -438,7 +447,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("includeAccount - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -454,7 +463,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("setLotteryInterval - should throw error (onlyOwner)", async () => {
-    const instance = await Ecstasy.new();
+    const instance = await setup();
     const notOwner = accounts[5];
 
     try {
@@ -470,10 +479,7 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("distribute - should throw error (UNAVAILABLE)", async () => {
-    const instance = await Ecstasy.new();
-
-    const interval = 30 * 60 * 60 * 24; // 30 days
-    await instance.setLotteryInterval(interval, true);
+    const instance = await setup();
 
     try {
       await instance.distribute(accounts[1]);
