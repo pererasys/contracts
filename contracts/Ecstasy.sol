@@ -66,9 +66,10 @@ contract Lottery is Context, usingProvable {
     _;
   }
 
-  function initialize() external {
-    require(!_ecstasy.locked, "Already initialized");
-    _ecstasy = EcstasyInstance(Ecstasy(_msgSender()), true);
+  function link() external {
+    require(!_ecstasy.locked, "Already linked");
+    Ecstasy instance = Ecstasy(_msgSender());
+    _ecstasy = EcstasyInstance(instance, true);
   }
 
   function start(address _distributor) external onlyEcstasy {
@@ -103,14 +104,14 @@ contract Lottery is Context, usingProvable {
     } else revert("Unverified distribution");
   }
 
-  function include(address account) external onlyEcstasy {
+  function includeAccount(address account) external onlyEcstasy {
     if (_ids[account] == 0) {
       _included.push(account);
       _ids[account] = _included.length - 1;
     }
   }
 
-  function exclude(address account) external onlyEcstasy {
+  function excludeAccount(address account) external onlyEcstasy {
     if (_ids[account] != 0) {
       uint256 id = _ids[account];
 
@@ -160,24 +161,20 @@ contract Ecstasy is Context, IERC20, Ownable {
   uint8 private _decimals = 9;
 
   constructor(address lottery) public {
-    _lottery = Lottery(lottery);
-    _lottery.initialize();
-
     address _sender = _msgSender();
-    address _ecstasy = address(this);
+
+    _lottery = Lottery(lottery);
+    _lottery.link(); // link this contract with the lottery system
 
     _rOwned[_sender] = _rTotal;
-    _lottery.include(_sender);
+    _lottery.includeAccount(_sender);
 
     // exclude both the owner and the contract from all fees
     _isExcludedFromFee[_sender] = true;
-    _isExcludedFromFee[_ecstasy] = true;
     _isExcludedFromFee[lottery] = true;
 
-    // exclude the contract from rewards
-    _isExcluded[_ecstasy] = true;
+    // exclude the lottery pot from rewards
     _isExcluded[lottery] = true;
-    _excluded.push(_ecstasy);
     _excluded.push(lottery);
 
     emit Transfer(address(0), _sender, _tTotal);
@@ -204,17 +201,12 @@ contract Ecstasy is Context, IERC20, Ownable {
     return tokenFromReflection(_rOwned[account]);
   }
 
-  function lotteryAddress() external view returns (address) {
+  function lottery() external view returns (address) {
     return address(_lottery);
   }
 
   function nextLottery() external view returns (uint256) {
     return _nextLottery;
-  }
-
-  function currentPot() external view returns (uint256) {
-    if (_isExcluded[address(_lottery)]) return _tOwned[address(_lottery)];
-    return tokenFromReflection(_rOwned[address(_lottery)]);
   }
 
   function transfer(address recipient, uint256 amount)
@@ -326,7 +318,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     }
     _isExcluded[account] = true;
     _excluded.push(account);
-    _lottery.exclude(account);
+    _lottery.excludeAccount(account);
   }
 
   function includeAccount(address account) external onlyOwner() {
@@ -338,7 +330,7 @@ contract Ecstasy is Context, IERC20, Ownable {
         _isExcluded[account] = false;
         _excluded.pop();
         if (_rOwned[account] > 0) {
-          _lottery.include(account);
+          _lottery.includeAccount(account);
         }
         break;
       }
@@ -402,7 +394,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     address recipient,
     uint256 tAmount
   ) private {
-    if (_rOwned[recipient] == 0) _lottery.include(recipient);
+    if (_rOwned[recipient] == 0) _lottery.includeAccount(recipient);
 
     (
       uint256 rAmount,
@@ -417,7 +409,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _takeLotteryFee(tLotteryFee);
     _reflectTransferFee(rFee, tTransferFee);
 
-    if (_rOwned[sender] == 0) _lottery.exclude(recipient);
+    if (_rOwned[sender] == 0) _lottery.excludeAccount(recipient);
 
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -441,7 +433,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     _takeLotteryFee(tLotteryFee);
     _reflectTransferFee(rFee, tTransferFee);
 
-    if (_rOwned[sender] == 0) _lottery.exclude(recipient);
+    if (_rOwned[sender] == 0) _lottery.excludeAccount(recipient);
 
     emit Transfer(sender, recipient, tTransferAmount);
   }
@@ -451,7 +443,7 @@ contract Ecstasy is Context, IERC20, Ownable {
     address recipient,
     uint256 tAmount
   ) private {
-    if (_rOwned[recipient] == 0) _lottery.include(recipient);
+    if (_rOwned[recipient] == 0) _lottery.includeAccount(recipient);
 
     (
       uint256 rAmount,
@@ -588,9 +580,9 @@ contract Ecstasy is Context, IERC20, Ownable {
     return (rSupply, tSupply);
   }
 
-  function distribute() public {
+  function startLottery() public {
     require(block.timestamp > _nextLottery, "Distribution is unavailable");
-    require(!_isExcluded[_msgSender()], "Distributor is excluded");
+    require(!_isExcluded[_msgSender()], "Distributor is excluded from rewards");
 
     // avoid starting the lottery multiple times due to callback architecture
     _nextLottery = block.timestamp + _lotteryInterval;
