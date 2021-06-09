@@ -583,6 +583,7 @@ contract Ecstasy is Context, IERC20, Ownable {
   function startLottery() public {
     require(block.timestamp > _nextLottery, "Distribution is unavailable");
     require(!_isExcluded[_msgSender()], "Distributor is excluded from rewards");
+    require(balanceOf(_msgSender()) != 0, "Distributor must be a token holder");
 
     // avoid starting the lottery multiple times due to callback architecture
     _nextLottery = block.timestamp + _lotteryInterval;
@@ -660,37 +661,40 @@ contract Ecstasy is Context, IERC20, Ownable {
     _lotteryFee = _previousLotteryFee;
   }
 
-  function excludeFromFee(address account) public onlyOwner {
+  function excludeFromFee(address account) external onlyOwner {
     _isExcludedFromFee[account] = true;
   }
 
-  function includeInFee(address account) public onlyOwner {
+  function includeInFee(address account) external onlyOwner {
     _isExcludedFromFee[account] = false;
   }
 
-  function isExcludedFromFee(address account) public view returns (bool) {
+  function isExcludedFromFee(address account) external view returns (bool) {
     return _isExcludedFromFee[account];
   }
 
-  function setTransferFee(uint8 fee) public onlyOwner {
+  function setTransferFee(uint8 fee) external onlyOwner {
     require(fee <= 100, "Fee cannot be greater than 100%");
     _previousTransferFee = _transferFee;
     _transferFee = fee;
   }
 
-  function setLotteryFee(uint8 fee) public onlyOwner {
+  function setLotteryFee(uint8 fee) external onlyOwner {
     require(fee <= 100, "Fee cannot be greater than 100%");
     _previousLotteryFee = _lotteryFee;
     _lotteryFee = fee;
   }
 
-  function setLotteryTax(uint8 tax) public onlyOwner {
+  function setLotteryTax(uint8 tax) external onlyOwner {
     require(tax <= 100, "Tax cannot be greater than 100%");
     _lotteryTax = tax;
   }
 
-  function setLotteryInterval(uint256 interval, bool update) public onlyOwner {
-    if (update) _nextLottery = _nextLottery - _lotteryInterval + interval;
+  function setLotteryInterval(uint256 interval, bool update)
+    external
+    onlyOwner
+  {
+    if (update) _nextLottery = (_nextLottery - _lotteryInterval) + interval;
     _lotteryInterval = interval;
   }
 }

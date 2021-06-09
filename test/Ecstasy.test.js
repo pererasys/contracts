@@ -1,20 +1,74 @@
 const Ecstasy = artifacts.require("Ecstasy");
 const Lottery = artifacts.require("Lottery");
 
-const setup = async () => {
-  const lottery = await Lottery.new();
-  const ecstasy = await Ecstasy.new(lottery.address);
+// helpers
 
-  return { lottery, ecstasy };
-};
+const waitForEvent = (_event, _from = 0, _to = "latest") =>
+  new Promise((resolve, reject) =>
+    _event({ fromBlock: _from, toBlock: _to }, (e, ev) =>
+      e ? reject(e) : resolve(ev)
+    )
+  );
 
 contract("Ecstasy", (accounts) => {
-  const DEFAULT_SUPPLY = 1 * 10 ** 9 * 10 ** 9;
+  const TOTAL_SUPPLY = 1 * 10 ** 9 * 10 ** 9;
 
   const DEFAULT_TRANSFER_FEE = 1;
   const DEFAULT_LOTTERY_FEE = 2;
 
   const DEFAULT_LOTTERY_TAX = 2;
+
+  const setup = async () => {
+    const lottery = await Lottery.new();
+    const ecstasy = await Ecstasy.new(lottery.address);
+
+    return { lottery, ecstasy };
+  };
+
+  const testTransfer = async ({
+    contract,
+    from,
+    to,
+    amount,
+    transferFee = DEFAULT_TRANSFER_FEE,
+    lotteryFee = DEFAULT_LOTTERY_FEE,
+  }) => {
+    const initialBalanceFrom = await contract.balanceOf(from.address);
+    const initialBalanceTo = await contract.balanceOf(to.address);
+
+    if (transferFee !== DEFAULT_TRANSFER_FEE)
+      await contract.setTransferFee(transferFee);
+    if (lotteryFee !== DEFAULT_LOTTERY_FEE)
+      await contract.setLotteryFee(lotteryFee);
+
+    if (from.excluded) await contract.excludeFromFee(from.address);
+    else await contract.includeInFee(from.address);
+
+    if (to.excluded) await contract.excludeFromFee(to.address);
+    else await contract.includeInFee(to.address);
+
+    await contract.transfer(to.address, amount, { from: from.address });
+
+    const finalBalanceFrom = await contract.balanceOf(from.address);
+    const finalBalanceTo = await contract.balanceOf(to.address);
+
+    const expectedTransferFee = (amount * transferFee) / 10 ** 2;
+    const expectedLotteryFee = (amount * lotteryFee) / 10 ** 2;
+    const expectedTotalFees = expectedTransferFee + expectedLotteryFee;
+
+    // ensure the supply hasn't changed after transfer
+    assert.equal(await contract.totalSupply(), TOTAL_SUPPLY, "Supply mismatch");
+
+    return {
+      initialBalanceFrom,
+      initialBalanceTo,
+      finalBalanceFrom,
+      finalBalanceTo,
+      expectedTransferFee,
+      expectedLotteryFee,
+      expectedTotalFees,
+    };
+  };
 
   it("should have correct decimals", async () => {
     const { ecstasy } = await setup();
@@ -27,14 +81,14 @@ contract("Ecstasy", (accounts) => {
     const { ecstasy } = await setup();
     const supply = await ecstasy.totalSupply();
 
-    assert.equal(supply, DEFAULT_SUPPLY, "Supply mismatch");
+    assert.equal(supply, TOTAL_SUPPLY, "Supply mismatch");
   });
 
   it("owner should have total supply at deployment", async () => {
     const { ecstasy } = await setup();
     const balance = await ecstasy.balanceOf(accounts[0]);
 
-    assert.equal(balance, DEFAULT_SUPPLY, "Balance mismatch");
+    assert.equal(balance, TOTAL_SUPPLY, "Balance mismatch");
   });
 
   it("owner should be excluded from fees by default", async () => {
@@ -129,123 +183,193 @@ contract("Ecstasy", (accounts) => {
     assert.equal(finalStatus, false, "Account final status mismatch");
   });
 
-  it("should transfer without fees", async () => {
+  it("should transfer without fees - from excluded", async () => {
     const { ecstasy, lottery } = await setup();
 
-    const from = accounts[0];
-    const to = accounts[1];
+    const from = { address: accounts[0], excluded: true };
+    const to = { address: accounts[1] };
+    const amount = 1000;
 
-    const initialBalanceFrom = await ecstasy.balanceOf(from);
-
-    // ensure at least one party is excluded in fees
-    await ecstasy.excludeFromFee(from);
-
-    const transferAmount = 100;
-    await ecstasy.transfer(to, transferAmount, { from });
-
-    const balanceFrom = await ecstasy.balanceOf(from);
-    const balanceTo = await ecstasy.balanceOf(to);
-
-    const fees = await ecstasy.totalFees();
-    const pot = await ecstasy.balanceOf(lottery.address);
+    const {
+      initialBalanceFrom,
+      initialBalanceTo,
+      finalBalanceFrom,
+      finalBalanceTo,
+    } = await testTransfer({ contract: ecstasy, from, to, amount });
 
     assert.equal(
-      balanceFrom,
-      initialBalanceFrom - transferAmount,
-      "FROM balance mismatch"
-    );
-    assert.equal(balanceTo, transferAmount, "TO balance mismatch");
-    assert.equal(fees, 0, "Fee mismatch");
-    assert.equal(pot, 0, "Pot mismatch");
-  });
-
-  it("should transfer with fees", async () => {
-    const { ecstasy, lottery } = await setup();
-
-    const from = accounts[0];
-    const to = accounts[1];
-
-    const initialBalanceFrom = await ecstasy.balanceOf(from);
-
-    // ensure both parties are included in fees
-    await ecstasy.includeInFee(from);
-    await ecstasy.includeInFee(to);
-
-    const transferAmount = 100;
-    await ecstasy.transfer(to, transferAmount, { from });
-
-    const balanceFrom = await ecstasy.balanceOf(from);
-    const balanceTo = await ecstasy.balanceOf(to);
-
-    const transferFees = await ecstasy.totalFees();
-    const currentPot = await ecstasy.balanceOf(lottery.address);
-
-    const expectedFees = (transferAmount * DEFAULT_TRANSFER_FEE) / 10 ** 2;
-    const expectedPot = (transferAmount * DEFAULT_LOTTERY_FEE) / 10 ** 2;
-    const expectedTotalFees = expectedFees + expectedPot;
-
-    // IMPORTANT: ensure the total supply has not changed
-    const totalSupply = await ecstasy.totalSupply();
-    const expectedSupply = parseInt(balanceFrom) + parseInt(balanceTo);
-    assert.equal(totalSupply, expectedSupply, "Supply mismatch");
-
-    assert.equal(
-      balanceFrom,
-      initialBalanceFrom - transferAmount,
+      finalBalanceFrom,
+      parseInt(initialBalanceFrom) - parseInt(amount),
       "FROM balance mismatch"
     );
     assert.equal(
-      balanceTo,
-      transferAmount - expectedTotalFees,
+      finalBalanceTo,
+      parseInt(initialBalanceTo) + parseInt(amount),
       "TO balance mismatch"
     );
-    assert.equal(transferFees, expectedFees, "Fee mismatch");
-    assert.equal(currentPot, expectedPot, "Pot mismatch");
+    assert.equal(
+      await ecstasy.balanceOf(lottery.address),
+      0,
+      "Lottery pot mismatch"
+    );
+    assert.equal(await ecstasy.totalFees(), 0, "Total fees mismatch");
+  });
+
+  it("should transfer without fees - to excluded", async () => {
+    const { ecstasy, lottery } = await setup();
+
+    const from = { address: accounts[0] };
+    const to = { address: accounts[1], excluded: true };
+    const amount = 1000;
+
+    const {
+      initialBalanceFrom,
+      initialBalanceTo,
+      finalBalanceFrom,
+      finalBalanceTo,
+    } = await testTransfer({ contract: ecstasy, from, to, amount });
+
+    assert.equal(
+      finalBalanceFrom,
+      parseInt(initialBalanceFrom) - parseInt(amount),
+      "FROM balance mismatch"
+    );
+    assert.equal(
+      finalBalanceTo,
+      parseInt(initialBalanceTo) + parseInt(amount),
+      "TO balance mismatch"
+    );
+    assert.equal(
+      await ecstasy.balanceOf(lottery.address),
+      0,
+      "Lottery pot mismatch"
+    );
+    assert.equal(await ecstasy.totalFees(), 0, "Total fees mismatch");
+  });
+
+  it("should transfer without fees - both excluded", async () => {
+    const { ecstasy, lottery } = await setup();
+
+    const from = { address: accounts[0], excluded: true };
+    const to = { address: accounts[1], excluded: true };
+    const amount = 1000;
+
+    const {
+      initialBalanceFrom,
+      initialBalanceTo,
+      finalBalanceFrom,
+      finalBalanceTo,
+    } = await testTransfer({ contract: ecstasy, from, to, amount });
+
+    assert.equal(
+      finalBalanceFrom,
+      parseInt(initialBalanceFrom) - parseInt(amount),
+      "FROM balance mismatch"
+    );
+    assert.equal(
+      finalBalanceTo,
+      parseInt(initialBalanceTo) + parseInt(amount),
+      "TO balance mismatch"
+    );
+    assert.equal(
+      await ecstasy.balanceOf(lottery.address),
+      0,
+      "Lottery pot mismatch"
+    );
+    assert.equal(await ecstasy.totalFees(), 0, "Total fees mismatch");
+  });
+
+  it("should transfer with fees - both included", async () => {
+    const { ecstasy, lottery } = await setup();
+
+    const from = { address: accounts[0] };
+    const to = { address: accounts[1] };
+    const amount = 1000;
+
+    const {
+      initialBalanceFrom,
+      initialBalanceTo,
+      finalBalanceFrom,
+      finalBalanceTo,
+      expectedTotalFees,
+      expectedTransferFee,
+      expectedLotteryFee,
+    } = await testTransfer({ contract: ecstasy, from, to, amount });
+
+    assert.equal(
+      finalBalanceFrom,
+      parseInt(initialBalanceFrom) -
+        parseInt(amount) +
+        parseInt(expectedTotalFees),
+      "FROM balance mismatch"
+    );
+    assert.equal(
+      finalBalanceTo,
+      parseInt(initialBalanceTo) +
+        parseInt(amount) -
+        parseInt(expectedTotalFees),
+      "TO balance mismatch"
+    );
+    assert.equal(
+      await ecstasy.balanceOf(lottery.address),
+      expectedLotteryFee,
+      "Lottery pot mismatch"
+    );
+    assert.equal(
+      await ecstasy.totalFees(),
+      expectedTransferFee,
+      "Total fees mismatch"
+    );
   });
 
   it("should transfer with updated fee structure", async () => {
     const { ecstasy, lottery } = await setup();
 
-    const from = accounts[0];
-    const to = accounts[1];
+    const from = { address: accounts[0] };
+    const to = { address: accounts[1] };
+    const amount = 1000;
 
-    const initialBalanceFrom = await ecstasy.balanceOf(from);
-
-    const transferAmount = 100;
-    const newTransactionFee = DEFAULT_TRANSFER_FEE + 3;
-    const newLotteryFee = DEFAULT_LOTTERY_FEE + 2;
-
-    await ecstasy.setTransferFee(newTransactionFee);
-    await ecstasy.setLotteryFee(newLotteryFee);
-
-    // ensure both parties are included in fees
-    await ecstasy.includeInFee(from);
-    await ecstasy.includeInFee(to);
-
-    await ecstasy.transfer(to, transferAmount, { from });
-
-    const balanceFrom = await ecstasy.balanceOf(from);
-    const balanceTo = await ecstasy.balanceOf(to);
-
-    const transferFees = await ecstasy.totalFees();
-    const currentPot = await ecstasy.balanceOf(lottery.address);
-
-    const expectedFees = (transferAmount * newTransactionFee) / 10 ** 2;
-    const expectedPot = (transferAmount * newLotteryFee) / 10 ** 2;
-    const expectedTotalFees = expectedFees + expectedPot;
+    const {
+      initialBalanceFrom,
+      initialBalanceTo,
+      finalBalanceFrom,
+      finalBalanceTo,
+      expectedTotalFees,
+      expectedTransferFee,
+      expectedLotteryFee,
+    } = await testTransfer({
+      contract: ecstasy,
+      from,
+      to,
+      amount,
+      transferFee: 5,
+      lotteryFee: 5,
+    });
 
     assert.equal(
-      balanceFrom,
-      initialBalanceFrom - transferAmount,
+      finalBalanceFrom,
+      parseInt(initialBalanceFrom) -
+        parseInt(amount) +
+        parseInt(expectedTotalFees),
       "FROM balance mismatch"
     );
     assert.equal(
-      balanceTo,
-      transferAmount - expectedTotalFees,
+      finalBalanceTo,
+      parseInt(initialBalanceTo) +
+        parseInt(amount) -
+        parseInt(expectedTotalFees),
       "TO balance mismatch"
     );
-    assert.equal(transferFees, expectedFees, "Fee mismatch");
-    assert.equal(currentPot, expectedPot, "Pot mismatch");
+    assert.equal(
+      await ecstasy.balanceOf(lottery.address),
+      expectedLotteryFee,
+      "Lottery pot mismatch"
+    );
+    assert.equal(
+      await ecstasy.totalFees(),
+      expectedTransferFee,
+      "Total fees mismatch"
+    );
   });
 
   // TODO test lottery distribution
@@ -394,22 +518,27 @@ contract("Ecstasy", (accounts) => {
   });
 
   it("startLottery - should throw error (excluded)", async () => {
-    const { ecstasy, lottery } = await setup();
+    const { ecstasy } = await setup();
 
-    await ecstasy.excludeAccount(accounts[1]);
+    const from = accounts[1];
+
+    await ecstasy.excludeAccount(from);
 
     // update lottery interval to avoid wrong error
     await ecstasy.setLotteryInterval(0, true);
 
-    try {
-      await ecstasy.startLottery({ from: accounts[1] });
-      throw new Error("not the expected error");
-    } catch (e) {
-      assert.equal(
-        e.reason,
-        "Distributor is excluded from rewards",
-        "Did not throw correct error"
-      );
-    }
+    // wait for interval to update?
+    setTimeout(async () => {
+      try {
+        await ecstasy.startLottery({ from });
+        throw new Error("not the expected error");
+      } catch (e) {
+        assert.equal(
+          e.reason,
+          "Distributor is excluded from rewards",
+          "Did not throw correct error"
+        );
+      }
+    }, 100);
   });
 });
