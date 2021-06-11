@@ -8,7 +8,7 @@
   "license": "GPL-3.0",
   "scripts": {
     "develop": "truffle develop",
-    "bridge": "ethereum-bridge -a 9 -H 127.0.0.1 -p 9545 --dev",
+    "bridge": "ethereum-bridge -a 9 -H 127.0.0.1:9545 --dev",
     "test": "truffle test",
     "compile": "truffle compile",
     "deploy:dev": "truffle migrate --network development",
@@ -21,6 +21,7 @@
     "truffle": "^5.3.7"
   },
   "devDependencies": {
+    "@openzeppelin/test-helpers": "^0.5.11",
     "ethereum-bridge": "^0.6.2",
     "prettier": "^2.3.0",
     "prettier-plugin-solidity": "^1.0.0-beta.10"

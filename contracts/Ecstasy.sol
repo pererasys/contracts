@@ -59,15 +59,12 @@ contract Lottery is Context, usingProvable {
   event StartLottery(uint256 timestamp, address indexed distributor);
 
   modifier onlyEcstasy() {
-    require(
-      address(_ecstasy.instance) == _msgSender(),
-      "Caller is not the Ecstasy contract"
-    );
+    require(address(_ecstasy.instance) == _msgSender(), "Invalid address");
     _;
   }
 
   function link() external {
-    require(!_ecstasy.locked, "Already linked");
+    require(!_ecstasy.locked, "Already linked to an Ecstasy instance");
     Ecstasy instance = Ecstasy(_msgSender());
     _ecstasy = EcstasyInstance(instance, true);
   }
@@ -160,14 +157,17 @@ contract Ecstasy is Context, IERC20, Ownable {
   string private _symbol = "E";
   uint8 private _decimals = 9;
 
+  event TransferLotteryReward(address indexed to, uint256 amount);
+  event TransferLotteryTax(address indexed to, uint256 amount);
+
   constructor(address lottery) public {
     address _sender = _msgSender();
 
     _lottery = Lottery(lottery);
-    _lottery.link(); // link this contract with the lottery system
+    _lottery.link(); // link with the lottery system
 
-    _rOwned[_sender] = _rTotal;
     _lottery.includeAccount(_sender);
+    _rOwned[_sender] = _rTotal;
 
     // exclude both the owner and the contract from all fees
     _isExcludedFromFee[_sender] = true;
@@ -592,7 +592,7 @@ contract Ecstasy is Context, IERC20, Ownable {
   }
 
   function __lotteryCallback(address distributor, address recipient) external {
-    require(address(_lottery) == _msgSender(), "Unverified distribution");
+    require(_msgSender() == address(_lottery), "Unverified distribution");
 
     uint256 reward = _rOwned[address(_lottery)];
 
@@ -604,15 +604,12 @@ contract Ecstasy is Context, IERC20, Ownable {
 
     _rOwned[recipient] = _rOwned[recipient].add(rewardMinusTax);
 
-    emit Transfer(address(_lottery), recipient, rewardMinusTax);
+    emit TransferLotteryReward(recipient, tokenFromReflection(rewardMinusTax));
 
     // give the tax to the distributor
     _rOwned[distributor] = _rOwned[distributor].add(tax);
 
-    if (_isExcluded[distributor]) {
-      tax = tokenFromReflection(tax);
-      _tOwned[distributor] = _tOwned[distributor].add(tax);
-    }
+    emit TransferLotteryTax(distributor, tokenFromReflection(tax));
 
     _resetLottery();
   }
