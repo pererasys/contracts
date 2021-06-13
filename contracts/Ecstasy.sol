@@ -56,7 +56,7 @@ contract Lottery is Context, usingProvable {
   // populate the first element so excluded accounts share an ID of 0
   address[] private _included = [address(0)];
 
-  event StartLottery(uint256 timestamp, address indexed distributor);
+  event StartLottery(address indexed distributor, uint256 timestamp);
 
   modifier onlyEcstasy() {
     require(address(_ecstasy.instance) == _msgSender(), "Invalid address");
@@ -69,12 +69,12 @@ contract Lottery is Context, usingProvable {
     _ecstasy = EcstasyInstance(instance, true);
   }
 
-  function start(address _distributor) external onlyEcstasy {
-    //fetch a new random number hash to select a recipient
+  function start(address distributor) external onlyEcstasy {
+    // fetch a new random number hash to select a recipient
     bytes32 id = provable_newRandomDSQuery(0, 7, 200000);
-    _distributions[id] = _distributor;
+    _distributions[id] = distributor;
 
-    emit StartLottery(block.timestamp, _distributor);
+    emit StartLottery(distributor, block.timestamp);
   }
 
   function __callback(
@@ -82,20 +82,18 @@ contract Lottery is Context, usingProvable {
     string memory _result,
     bytes memory _proof
   ) public override {
-    require(_msgSender() == provable_cbAddress());
+    require(_msgSender() == provable_cbAddress(), "Unverified callback");
 
     if (
       provable_randomDS_proofVerify__returnCode(_queryId, _result, _proof) == 0
     ) {
+      address distributor = _distributions[_queryId];
       uint256 ceiling = _included.length;
 
       // random index between 1 and _included.length (avoid selecting 0 address)
       uint256 r = (uint256(keccak256(abi.encodePacked(_result))) % ceiling) + 1;
 
-      _ecstasy.instance.__lotteryCallback(
-        _distributions[_queryId],
-        _included[r]
-      );
+      _ecstasy.instance.__lotteryCallback(distributor, _included[r]);
 
       delete _distributions[_queryId];
     } else revert("Unverified distribution");
@@ -157,8 +155,12 @@ contract Ecstasy is Context, IERC20, Ownable {
   string private _symbol = "E";
   uint8 private _decimals = 9;
 
-  event TransferLotteryReward(address indexed to, uint256 amount);
-  event TransferLotteryTax(address indexed to, uint256 amount);
+  event LotteryDistribution(
+    address indexed distributor,
+    address indexed recipient,
+    uint256 reward,
+    uint256 tax
+  );
 
   constructor(address lottery) public {
     address _sender = _msgSender();
@@ -580,43 +582,47 @@ contract Ecstasy is Context, IERC20, Ownable {
     return (rSupply, tSupply);
   }
 
-  function startLottery() public {
+  function startLottery() external {
+    address distributor = _msgSender();
+
     require(block.timestamp > _nextLottery, "Distribution is unavailable");
-    require(!_isExcluded[_msgSender()], "Distributor is excluded from rewards");
-    require(balanceOf(_msgSender()) != 0, "Distributor must be a token holder");
+    require(!_isExcluded[distributor], "Distributor is excluded from rewards");
+    require(balanceOf(distributor) != 0, "Distributor must be a token holder");
 
-    // avoid starting the lottery multiple times due to callback architecture
-    _nextLottery = block.timestamp + _lotteryInterval;
+    _lottery.start(distributor);
 
-    _lottery.start(_msgSender());
+    _resetNextLottery();
   }
 
   function __lotteryCallback(address distributor, address recipient) external {
     require(_msgSender() == address(_lottery), "Unverified distribution");
 
     uint256 reward = _rOwned[address(_lottery)];
+    _rOwned[address(_lottery)] = 0;
 
-    if (_isExcluded[address(_lottery)])
+    if (_isExcluded[address(_lottery)]) {
       reward = reflectionFromToken(_tOwned[address(_lottery)], false);
+      _tOwned[address(_lottery)] = 0;
+    }
 
     uint256 tax = _calculateLotteryTax(reward);
     uint256 rewardMinusTax = reward.sub(tax);
 
     _rOwned[recipient] = _rOwned[recipient].add(rewardMinusTax);
 
-    emit TransferLotteryReward(recipient, tokenFromReflection(rewardMinusTax));
-
     // give the tax to the distributor
     _rOwned[distributor] = _rOwned[distributor].add(tax);
 
-    emit TransferLotteryTax(distributor, tokenFromReflection(tax));
-
-    _resetLottery();
+    emit LotteryDistribution(
+      distributor,
+      recipient,
+      tokenFromReflection(rewardMinusTax),
+      tokenFromReflection(tax)
+    );
   }
 
-  function _resetLottery() private {
-    if (_isExcluded[address(_lottery)]) _tOwned[address(_lottery)] = 0;
-    _rOwned[address(_lottery)] = 0;
+  function _resetNextLottery() private {
+    _nextLottery = block.timestamp + _lotteryInterval;
   }
 
   function _calculateTransferFee(uint256 _amount)

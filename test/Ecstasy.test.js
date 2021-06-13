@@ -384,52 +384,6 @@ contract("Ecstasy", (accounts) => {
     );
   });
 
-  it("should start the lottery", async () => {
-    const { ecstasy, lottery, ecstasyEvents, lotteryEvents } = await setup();
-
-    await testTransfer({
-      contract: ecstasy,
-      from: { address: accounts[0] },
-      to: { address: accounts[1] },
-      amount: new BN("1000000"),
-    });
-
-    const distributor = accounts[1];
-
-    await time.increaseTo(
-      (await ecstasy.nextLottery()).add(time.duration.seconds(1))
-    );
-
-    const totalPot = await ecstasy.balanceOf(lottery.address);
-    const expectedTax = toPercent(totalPot.mul(DEFAULT_LOTTERY_TAX));
-    const expectedReward = totalPot - expectedTax;
-
-    await ecstasy.startLottery({ from: distributor });
-
-    const {
-      returnValues: { distributor: loggedDistributor },
-    } = await waitForEvent(lotteryEvents["StartLottery"]);
-
-    assert.equal(
-      loggedDistributor,
-      distributor,
-      "Distributor mismatch in event"
-    );
-
-    const {
-      returnValues: { amount: reward },
-    } = await waitForEvent(ecstasyEvents["TransferLotteryReward"]);
-
-    assert(reward.eq(expectedReward), "Reward mismatch");
-
-    const {
-      returnValues: { to: taxRecipient, amount: tax },
-    } = await waitForEvent(ecstasyEvents["TransferLotteryTax"]);
-
-    assert(tax.eq(expectedTax), "Tax mismatch");
-    assert.equal(taxRecipient, distributor, "Tax recipient mismatch");
-  });
-
   it("setTransferFee - should throw error (onlyOwner)", async () => {
     const { ecstasy } = await setup();
     const notOwner = accounts[5];
